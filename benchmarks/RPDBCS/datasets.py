@@ -2,7 +2,8 @@ from typing import Iterable, List, Union
 import torch
 from vibdata.datahandler.base import RawVibrationDataset
 from vibdata.datahandler.transforms.TransformDataset import PickledDataset
-from vibdata.datahandler.transforms.signal import FilterByValue, StandardScaler, Split, FFT, asType, ReshapeSingleChannel, SelectFields, toBinaryClassification, NormalizeSampleRate
+from vibdata.datahandler.transforms.signal import FilterByValue, StandardScaler, MinMaxScaler, Split, FFT, asType, ReshapeSingleChannel, SelectFields, toBinaryClassification, NormalizeSampleRate
+from vibdata.datahandler.transforms.signal import Sampling
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline, make_pipeline
@@ -30,6 +31,9 @@ class TransformsDataset(torch.utils.data.IterableDataset):
             return self.transforms.transform(d)
         else:
             return self.transforms(d)
+
+    def __len__(self):
+        return len(self.D)
 
 
 class ConcatenateDataset(torch.utils.data.IterableDataset):
@@ -124,13 +128,13 @@ class AppendDataset(torch.utils.data.IterableDataset):
 
 
 COMMON_TRANSFORMERS = [
+    # StandardScaler(on_field='signal', type='all'),
+    # NormalizeSampleRate(97656),
+    Split(6101*2),
+    FFT(discard_first_points=1),
     StandardScaler(on_field='signal', type='all'),
-    NormalizeSampleRate(97656),
-    Split(6100*2),
-    FFT(),
-    #    StandardScaler(on_field='signal', type='all'),
     asType(np.float32, on_field='signal'),
-    # toBinaryClassification(),
+    toBinaryClassification(),
     SelectFields('signal', ['label', 'index'])]
 
 
@@ -151,9 +155,10 @@ MFPT_TRANSFORMERS = [
 
 SEU_TRANSFORMERS = [FilterByValue(on_field='channel', values=1)] + COMMON_TRANSFORMERS
 
-PU_TRANSFORMERS = COMMON_TRANSFORMERS
-# PU_TRANSFORMERS = [
-#     FilterByValue(on_field='rotation_hz', values=[15])
-# ] + COMMON_TRANSFORMERS
+# PU_TRANSFORMERS = COMMON_TRANSFORMERS
+PU_TRANSFORMERS = [
+    Sampling(0.5)
+] + COMMON_TRANSFORMERS
 
-RPDBCS_TRANSFORMERS = [SelectFields('signal', ['label', 'index'])]
+RPDBCS_TRANSFORMERS = [StandardScaler(on_field='signal', type='all'),
+                       SelectFields('signal', ['label', 'index'])]
