@@ -39,8 +39,6 @@ torch.cuda.manual_seed(RANDOM_STATE)
 np.random.seed(RANDOM_STATE)
 CURRENT_TIME = datetime.now().strftime('%b%d_%H-%M-%S')
 
-VIBNET_BB_FPATH = '/tmp/vibnet_backbone.pt'
-
 DATASETS = [
     ('mfpt', MFPT_raw, {}, MFPT_TRANSFORMERS),
     ('cwru', CWRU_raw, {}, CWRU_TRANSFORMERS),
@@ -150,7 +148,7 @@ DEFAULT_NETPARAMS = {
     # 'iterator_valid__prefetch_factor': 32
 }
 
-DEFAULT_OPTIM_PARAMS = {'weight_decay': 1e-4, 'lr': 1e-3/3,
+DEFAULT_OPTIM_PARAMS = {'weight_decay': 1e-4, 'lr': 1e-3,
                         'eps': 1e-16, 'betas': (0.9, 0.999),
                         'weight_decouple': False, 'rectify': False,
                         'print_change_log': False}
@@ -266,11 +264,6 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
     module_params['module'] = MetricNet
 
     callbacks = commonCallbacks('saved_models/tripletnet/vibnet_%s.pt' % "-".join(dataset_names))
-    # callbacks.append(EpochScoring('f1_macro', lower_is_better=False, on_train=False,
-    #                               name='valid/f1_macro'))
-    # callbacks.append(EpochScoring('f1_macro', lower_is_better=False, on_train=True,
-    #                               name='train/f1_macro'))
-
     # callbacks.append(EstimatorEpochScoring(QuadraticDiscriminantAnalysis(), 'f1_macro',
     #                                        name='QDA_f1_macro', lower_is_better=False, use_caching=False))
     # domains = np.unique(dataset.getDomains())  # WARNING: relies on the order
@@ -347,9 +340,9 @@ def run_single_experiment(datasets_concat: ConcatenateDataset, datasets_names,
     WANDB_RUN.config.update(configs)
 
     with WANDB_RUN:
-        torch.manual_seed(RANDOM_STATE)
-        torch.cuda.manual_seed(RANDOM_STATE)
-        np.random.seed(RANDOM_STATE)
+        # torch.manual_seed(RANDOM_STATE)
+        # torch.cuda.manual_seed(RANDOM_STATE)
+        # np.random.seed(RANDOM_STATE)
         vibnet_name, vibnet = createVibnet(datasets_concat, datasets_names,
                                            lr=lr, encode_size=encode_size, margin=margin,
                                            add_data=(Dtarget, dname))
@@ -371,7 +364,6 @@ def run_single_experiment(datasets_concat: ConcatenateDataset, datasets_names,
             vibnet.fit(datasets_concat, Yc, groups=groups_ids)
         else:
             raise ValueError()
-    torch.save(vibnet.module_.backbone, VIBNET_BB_FPATH)
     vibnet = None
 
 
@@ -380,16 +372,19 @@ def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
     datasets_transformed = loadTransformDatasets(data_root_dir, DATASETS, cache_dir)
     datasets_names = [name for name, _ in datasets_transformed]
 
-    domain_balance_mode_list = ['batch', 'loss']
-    lr_list = [1e-3, 1e-3/3, 1e-4]
-    encode_size_list = [32, 16, 64]
-    margin_list = [0.5, 0.2, 0.35]
+    domain_balance_mode_list = ['loss']
+    lr_list = [1e-3]
+    encode_size_list = [8, 12, 16, 20, 24, 32, 48]
+    margin_list = [0.5]
     reruns = 3
 
     n_exps = len(datasets_transformed)*len(margin_list)*len(lr_list)*len(encode_size_list)*len(domain_balance_mode_list)
 
+    with open('log.txt', 'w') as f:
+        pass
+
     with tqdm(total=n_exps*reruns) as pbar:
-        for _ in range(reruns):
+        for rerun_id in range(reruns):
             for i, (dname, Dtarget) in enumerate(datasets_transformed):
                 for margin in margin_list:
                     for encode_size in encode_size_list:
@@ -406,6 +401,10 @@ def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
                                                       Dtarget, dname,
                                                       lr=lr, encode_size=encode_size, margin=margin, domain_balance_mode=domain_balance_mode)
                                 pbar.update()
+                                with open('log.txt', 'a') as f:
+                                    log_params = (rerun_id, dname, margin, encode_size, lr, domain_balance_mode)
+                                    f.write("Finished run %d | dataset %s | margin %.2f | encode_size %d | lr %.5f | dbalance_mode %s\n"
+                                            % log_params)
 
 
 """

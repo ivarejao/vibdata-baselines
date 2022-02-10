@@ -1,10 +1,9 @@
 from typing import Dict, Iterable, List, Tuple
 from sklearn.base import BaseEstimator, ClassifierMixin
-from skorch.callbacks.base import Callback
 from .datasets import CWRU_TRANSFORMERS, PU_TRANSFORMERS, SEU_TRANSFORMERS, MFPT_TRANSFORMERS, RPDBCS_TRANSFORMERS, ConcatenateDataset
 import pandas as pd
 from sklearn.decomposition import PCA
-from sklearn.model_selection import cross_validate, GroupShuffleSplit, ShuffleSplit, PredefinedSplit, cross_val_predict
+from sklearn.model_selection import cross_validate, GroupShuffleSplit, ShuffleSplit, PredefinedSplit, cross_val_predict, StratifiedGroupKFold
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
@@ -27,6 +26,7 @@ from wandb.sdk import wandb_run
 from skorch.callbacks import WandbLogger
 from datetime import datetime
 from .models.GradRev_models import DomainAdapNet, DomainAdapNetConv
+from .utils import ExternalDatasetScoringCallback
 
 
 CURRENT_TIME = datetime.now().strftime('%b%d_%H-%M-%S')
@@ -40,35 +40,18 @@ RANDOM_STATE = 42
 
 class ValidGroupSplit(ValidSplit):
     def _check_cv_float(self):
-        assert(self.stratified == False)
-        return GroupShuffleSplit(test_size=self.cv, random_state=self.random_state)
+        # assert(self.stratified == False)
+        if(self.cv < 1):
+            n_splits = int(1/self.cv)
+        else:
+            n_splits = self.cv
+        return StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=self.random_state)
+        # return GroupShuffleSplit(test_size=self.cv, random_state=self.random_state)
+
+    def _is_stratified(self, cv):
+        return True
 
 
-class ExternalDatasetScoringCallback(Callback):
-    def __init__(self, X, Y, metrics: List[Tuple], classifier_adapter=lambda net: net, classifier_adapter__kwargs={}) -> None:
-        super().__init__()
-        self.X = X
-        self.Y = Y
-        self.classifier_adapter = classifier_adapter
-        self.metrics = metrics
-        self.best_scores = [np.PINF if lower_is_better else np.NINF for _, _, lower_is_better in metrics]
-        self.classifier_adapter__kwargs = classifier_adapter__kwargs
-
-    def on_epoch_end(self, net: skorch.NeuralNet, **kwargs):
-        def is_better(v0, v_current, lower_is_better):
-            if(lower_is_better):
-                return v_current < v0
-            return v_current > v0
-
-        clf = self.classifier_adapter(net, **self.classifier_adapter__kwargs)
-        yp = clf.predict(self.X)
-        for i, (mname, m, lower_is_better) in enumerate(self.metrics):
-            value = m(self.Y, yp)
-            net.history.record(mname, value)
-            better = is_better(self.best_scores[i], value, lower_is_better)
-            if(better):
-                self.best_scores[i] = value
-            net.history.record(mname+"_best", better)
 
 
 class WandbLoggerExtended(WandbLogger):
@@ -79,11 +62,14 @@ class WandbLoggerExtended(WandbLogger):
 
     def on_epoch_end(self, net, **kwargs):
         def rename_key_value(key):
-            if(key == 'valid_loss'):
-                return 'valid/loss'
-            elif(key == 'train_loss'):
-                return 'train/loss'
+            if(key[:6] in ('valid_', 'train_')):
+                return key[:5]+'/'+key[6:]
             return key
+            # if(key == 'valid_loss'):
+            #     return 'valid/loss'
+            # elif(key == 'train_loss'):
+            #     return 'train/loss'
+            # return key
         """Log values from the last history step and save best model"""
         hist = net.history[-1]
         keys_kept = skorch.callbacks.logging.filter_log_keys(hist, keys_ignored=self.keys_ignored_)
@@ -170,7 +156,7 @@ def createClassifiers(dataset: ConcatenateDataset, dataset_names) -> Iterable:
         'criterion': DomainAdapLoss, 'criterion__alpha': 1.0,  # 'criterion__reduction': 'none',
         'max_epochs': 20,
         'batch_size': 256,
-        'train_split': ValidGroupSplit(0.1, stratified=False),
+        'train_split': ValidGroupSplit(10, stratified=False),
         # 'iterator_train': BalancedDataLoader, 'iterator_train__num_workers': 0, 'iterator_train__pin_memory': False, 'iterator_train__random_state': RANDOM_STATE,
     }
 

@@ -34,6 +34,7 @@ from pytorch_metric_learning.reducers import MeanReducer, DoNothingReducer
 import wandb
 from datetime import datetime
 from pathlib import Path
+from .utils import DomainValidSplit, EstimatorDomainScoring, metric_domain, ExternalDatasetScoringCallback, loadTransformDatasets
 
 RANDOM_STATE = 42
 torch.manual_seed(RANDOM_STATE)
@@ -44,25 +45,13 @@ CURRENT_TIME = datetime.now().strftime('%b%d_%H-%M-%S')
 VIBNET_BB_FPATH = '/tmp/vibnet_backbone.pt'
 
 
-class DomainValidSplit:
-    def __call__(self, dataset, y=None, groups=None):
-        domain = np.array([x['domain'] for x, _ in dataset], dtype=int)
-        group_ids = np.array([x['index'] for x, _ in dataset], dtype=int)
-        sampler = StratifiedGroupKFold(10, shuffle=True, random_state=RANDOM_STATE)
-        uniq_domains = np.unique(domain)
-        train_idxs = []
-        test_idxs = []
-        for d in uniq_domains:
-            d_idxs = np.where(domain == d)[0]
-            y_d = y[d_idxs]
-            train_idxs_d, test_idxs_d = next(sampler.split(y_d, y_d, group_ids[d_idxs]))
-            train_idxs.append(d_idxs[train_idxs_d])
-            test_idxs.append(d_idxs[test_idxs_d])
-
-        train_idxs = np.hstack(train_idxs)
-        test_idxs = np.hstack(test_idxs)
-
-        return Subset(dataset, train_idxs), Subset(dataset, test_idxs)
+DATASETS = [
+    ('mfpt', MFPT_raw, {}, MFPT_TRANSFORMERS),
+    ('cwru', CWRU_raw, {}, CWRU_TRANSFORMERS),
+    # ('seu', SEU_raw, SEU_TRANSFORMERS),
+    ('pu', PU_raw, {}, PU_TRANSFORMERS),
+    ('rpdbcs', RPDBCS_raw, {'frequency_domain': True}, RPDBCS_TRANSFORMERS),
+]
 
 
 class MLP6Classifier(nn.Module):
@@ -117,32 +106,7 @@ class MLP6ClassifierPerDomain(nn.Module):
         return X
 
 
-class EstimatorDomainScoring(EstimatorEpochScoring):
-    def __init__(self, i, domains, estimator, metric='f1_macro', name='score', lower_is_better=False, use_caching=False, on_train=False, **kwargs):
-        super().__init__(estimator, metric, name, lower_is_better, use_caching, on_train, **kwargs)
-        self.i = i
-        self.domains = domains
-
-    def get_test_data(self, dataset_train: Subset, dataset_valid: Subset):
-        dtrain = self.domains[dataset_train.indices]
-        dvalid = self.domains[dataset_valid.indices]
-        idxs_train = dtrain == self.i
-        idxs_valid = dvalid == self.i
-        X, Y, P = super().get_test_data(dataset_train, dataset_valid)
-        Xtr, Xv = X
-        Xtr = Subset(Xtr, np.where(idxs_train)[0])
-        Xv = Subset(Xv, np.where(idxs_valid)[0])
-        return (Xtr, Xv), Y, P
-
-
 class MyNet(NeuralNetClassifier):
-    def get_loss(self, y_pred, y_true, X=None, training=False):
-        loss_unreduced = super().get_loss(y_pred, y_true, X=X, training=training)
-        if(isinstance(X, dict) and 'sample_weight' in X):
-            sample_weight = X['sample_weight'].to(device=loss_unreduced.device)
-            return (sample_weight * loss_unreduced).mean()
-        return loss_unreduced.mean()
-
     def transform(self, X):
         self.module_.transform_mode = True
         ret = self.predict_proba(X)
@@ -197,7 +161,7 @@ DEFAULT_NETPARAMS = {
     # 'iterator_valid__prefetch_factor': 32
 }
 
-DEFAULT_OPTIM_PARAMS = {'weight_decay': 1e-4, 'lr': 1e-3/3,
+DEFAULT_OPTIM_PARAMS = {'weight_decay': 1e-4, 'lr': 1e-3,
                         'eps': 1e-16, 'betas': (0.9, 0.999),
                         'weight_decouple': False, 'rectify': False,
                         'print_change_log': False}
@@ -245,19 +209,6 @@ class _f1macro_domain:
         return f1_score(y[mask], yp[mask], average='macro')
 
 
-class metric_domain:
-    def __init__(self, i, metric: Callable) -> None:
-        self.i = i
-        self.metric = metric
-
-    def __call__(self, net, X, y) -> Any:
-        yp = net.predict(X)
-        domain = np.array([x['domain'] for x, _ in X], dtype=int)
-        mask = domain == self.i
-        assert(mask.sum() > 0)
-        return self.metric(y[mask], yp[mask])
-
-
 def _tripletloss(yt, xe):
     xe = torch.cuda.FloatTensor(xe)
     yt = torch.cuda.IntTensor(yt)
@@ -268,7 +219,6 @@ def _tripletloss(yt, xe):
     D = TensorDataset(xe, yt)
     dl = DataLoader(D, batch_size=1024, shuffle=True)
 
-    bs = 1024
     loss = 0.0
     n = 0
     for xe_i, yt_i in dl:
@@ -310,6 +260,7 @@ def _pipelinedQDA(yt, xe):
 
 
 def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
+                 lr, encode_size, margin,
                  add_data: Tuple[PickledDataset, str] = None):
     class _transform_out:
         """
@@ -327,40 +278,22 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
             data['domain'] = self.i
             return data, label
 
-    class transform_classifier_cb:
-        def __init__(self, net, **kwargs) -> None:
-            self.net = net
-
-        def predict(self, X):
-            return self.net.transform(X)
-
     global WANDB_RUN
 
     num_classes = [len(np.unique(d.metainfo['label'])) for d in dataset.datasets]
 
     module_params = {
         'n_classes': num_classes,
-        'encode_size': 32, 'input_size': dataset.getInputSize(),
+        'encode_size': encode_size, 'input_size': dataset.getInputSize(),
     }
     module_params = {"module__"+key: v for key, v in module_params.items()}
     module_params['module'] = MetricNet
 
     callbacks = commonCallbacks('saved_models/tripletnet/vibnet_%s.pt' % "-".join(dataset_names))
-    # callbacks.append(EpochScoring('f1_macro', lower_is_better=False, on_train=False,
-    #                               name='valid/f1_macro'))
-    # callbacks.append(EpochScoring('f1_macro', lower_is_better=False, on_train=True,
-    #                               name='train/f1_macro'))
-
-    # callbacks.append(EstimatorEpochScoring(QuadraticDiscriminantAnalysis(), 'f1_macro',
-    #                                        name='QDA_f1_macro', lower_is_better=False, use_caching=False))
-    # domains = np.unique(dataset.getDomains())  # WARNING: relies on the order
     for i, dname in enumerate(dataset_names):
         if(dname is None):
             continue
 
-        # fmacro_d_cb = EpochScoring(_f1macro_domain(domains[i]), lower_is_better=False,
-        #                            name='valid/f1_macro_%s' % dname)
-        # callbacks.append(fmacro_d_cb)
         cb = EpochScoring(metric_domain(i, _tripletloss), lower_is_better=True,
                           name="valid/triplet_loss_%s" % dname, on_train=False)
         callbacks.append(cb)
@@ -369,22 +302,22 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
                                     metric='f1_macro', lower_is_better=False)
         callbacks.append(cb)
 
-    # if(add_data is not None):
-    #     d, dname = add_data
-    #     labels = d.metainfo['label']
-    #     if(len(labels) > 6000):
-    #         sampler = StratifiedShuffleSplit(n_splits=1, test_size=6000, random_state=RANDOM_STATE)
-    #         _, test_idxs = next(sampler.split(labels, labels))
-    #         d = Subset(d, test_idxs)
-    #         labels = labels[test_idxs]
-    #     d = TransformsDataset(d, _transform_out(-1))
-    #     d.labels = labels
-    #     # ext_metrics = [("valid/tripletloss_"+dname, _tripletloss, True),
-    #     #                ("valid/non-neg_triplets_"+dname, _positives_triplets_loss, True)]
-    #     ext_metrics = [("valid/f1_macro_"+dname, _pipelinedQDA, False)]
-    #     score_external = ExternalDatasetScoringCallback(d, labels,  # classifier_adapter=transform_classifier_cb,
-    #                                                     metrics=ext_metrics)
-    #     callbacks.append(score_external)
+    if(add_data is not None):
+        d, dname = add_data
+        labels = d.metainfo['label']
+        if(len(labels) > 6000):
+            sampler = StratifiedShuffleSplit(n_splits=1, test_size=6000, random_state=RANDOM_STATE)
+            _, test_idxs = next(sampler.split(labels, labels))
+            d = Subset(d, test_idxs)
+            labels = labels[test_idxs]
+        d = TransformsDataset(d, _transform_out(-1))
+        d.labels = labels
+        # ext_metrics = [("valid/tripletloss_"+dname, _tripletloss, True),
+        #                ("valid/non-neg_triplets_"+dname, _positives_triplets_loss, True)]
+        ext_metrics = [("valid/f1_macro_"+dname, _pipelinedQDA, False)]
+        score_external = ExternalDatasetScoringCallback(d, labels,  # classifier_adapter=transform_classifier_cb,
+                                                        metrics=ext_metrics)
+        callbacks.append(score_external)
 
     callbacks.append(WandbLoggerExtended(WANDB_RUN))
 
@@ -392,29 +325,32 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
     # net_params['criterion__reduction'] = 'none'
     net_params.update({'criterion': LossPerDomain,
                        'criterion__base_loss': TripletMarginLoss, 'criterion__reducer': MeanReducer(),
-                       'criterion__margin': 0.5, 'criterion__triplets_per_anchor': 'all'
+                       'criterion__margin': margin, 'criterion__triplets_per_anchor': 'all'
                        })
     net_params['callbacks'] = callbacks
     net_params['train_split'] = DomainValidSplit()
     # net_params['train_split'] = ValidSplit(cv=0.1, stratified=True, random_state=RANDOM_STATE)
 
+    optimizer_params = DEFAULT_OPTIM_PARAMS.copy()
+    optimizer_params['optimizer__lr'] = lr
+
     WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in net_params.items()})
     WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in module_params.items()})
-    WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in DEFAULT_OPTIM_PARAMS.items()})
+    WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in optimizer_params.items()})
 
     name = "Tripletloss-Vibnet"
-    clf = NetPerDomain(**net_params, **module_params, **DEFAULT_OPTIM_PARAMS)
+    clf = NetPerDomain(**net_params, **module_params, **optimizer_params)
     return (name, clf)
 
 
-def createFineTNet(dataset: PickledDataset, finetunning_on=True):
+def createFineTNet(dataset: PickledDataset, encode_size, finetunning_on=True):
     global WANDB_RUN
     num_classes = len(np.unique(dataset.metainfo['label']))
 
     module_params = {
         'n_classes': num_classes,
         'load_bb_weights_fpath': VIBNET_BB_FPATH if finetunning_on else None,
-        'encode_size': 32, 'input_size': dataset[0]['signal'].shape[-1],
+        'encode_size': encode_size, 'input_size': dataset[0]['signal'].shape[-1],
     }
     module_params = {"module__"+key: v for key, v in module_params.items()}
     module_params['module'] = MetricNet
@@ -432,7 +368,8 @@ def createFineTNet(dataset: PickledDataset, finetunning_on=True):
     net_params = DEFAULT_NETPARAMS.copy()
     net_params.update({
         'callbacks': callbacks,
-        'criterion': TripletMarginLoss, 'criterion__margin': 0.1, 'criterion__triplets_per_anchor': 1
+        'criterion': TripletMarginLoss,
+        'criterion__margin': 0.5, 'criterion__triplets_per_anchor': 'all', 'criterion__reducer': MeanReducer()
     })
     WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in net_params.items()})
     WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in module_params.items()})
@@ -445,28 +382,6 @@ def createFineTNet(dataset: PickledDataset, finetunning_on=True):
     clf = Pipeline([('metricnet', clf),
                     ('clf', RandomForestClassifier(n_estimators=300, min_impurity_decrease=1e-5, n_jobs=-1))])
     return (name, clf)
-
-
-DATASETS = [
-    ('mfpt', MFPT_raw, {}, MFPT_TRANSFORMERS),
-    ('cwru', CWRU_raw, {}, CWRU_TRANSFORMERS),
-    # ('seu', SEU_raw, SEU_TRANSFORMERS),
-    ('pu', PU_raw, {}, PU_TRANSFORMERS),
-    ('rpdbcs', RPDBCS_raw, {'frequency_domain': True}, RPDBCS_TRANSFORMERS),
-]
-
-
-def _loadTransformDatasets(data_root_dir, cache_dir=None) -> List[PickledDataset]:
-    # ddd = CWRU_raw(data_root_dir)
-    # labels = ddd.getMetaInfo()['label']
-    datasets_transformed = []
-    for dname, dataset_raw_cls, params, transforms in tqdm(DATASETS, desc="Loading and transforming datasets"):
-        dataset_raw = dataset_raw_cls(data_root_dir, download=True, **params)
-        data_dir = os.path.join(cache_dir, dname)
-        D = transform_and_saveDataset(dataset_raw, make_pipeline(*transforms), data_dir, batch_size=6000)
-        print(">>>", dname, len(D))
-        datasets_transformed.append((dname, D))
-    return datasets_transformed
 
 
 def _fmacro_perdomain(Yc, Yd, Ycp):
@@ -512,18 +427,8 @@ def run_single_experiment(datasets_concat: ConcatenateDataset, datasets_names, D
             vibnet_name, vibnet = createVibnet(datasets_concat, datasets_names,
                                                add_data=(Dtarget, dname))
 
-            # # Sample weights
-            # weights_cl = np.unique(Yc, return_counts=True)[1]
-            # weights_cl = weights_cl.sum()/weights_cl
-            # weights_cl = weights_cl[Yc]
-            # weights_d = np.unique(Yd, return_counts=True)[1]
-            # weights_d = weights_d.sum()/weights_d
-            # weights_d = weights_d[Yd]
-            # # sample_weights = (weights_cl+weights_d)/2
-            # sample_weights = weights_d
-
             # final_dataset = AppendDataset(datasets_concat, {'sample_weight': sample_weights})
-            vibnet.fit(datasets_concat, Yc+Yd*10, groups=groups_ids)
+            vibnet.fit(datasets_concat, Yc, groups=groups_ids)
         torch.save(vibnet.module_.backbone, VIBNET_BB_FPATH)
         vibnet = None
     elif(finetunning_on == False):
@@ -578,22 +483,11 @@ def run_single_experiment(datasets_concat: ConcatenateDataset, datasets_names, D
 
 
 def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
-    def calculate_metrics(Yc, Yd, Ycp):
-        """
-        Calculate metrics and add them to the Results list.
-        """
-        fmacro = f1_score(Yc, Ycp, average='macro')
-        if(Yd is None):
-            return [fmacro]
-        scs = _fmacro_perdomain(Yc, Yd, Ycp)
-        assert(len(scs) == len(np.unique(Yd)))
-        return [fmacro] + scs
-
     sampler = StratifiedGroupKFold(n_splits=4, shuffle=True, random_state=RANDOM_STATE)
     # sampler = StratifiedShuffleSplit(n_splits=1, test_size=0.25, random_state=RANDOM_STATE)
 
     # Transform datasets
-    datasets_transformed = _loadTransformDatasets(data_root_dir, cache_dir)
+    datasets_transformed = loadTransformDatasets(data_root_dir, DATASETS, cache_dir)
     datasets_names = [name for name, _ in datasets_transformed]
 
     # All datasets

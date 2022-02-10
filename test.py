@@ -1,4 +1,4 @@
-from benchmarks.RPDBCS import experiment_finetunning
+from benchmarks.RPDBCS import experiment_finetunning, experiment_vibnet
 from vibdata.datahandler import RPDBCS_raw, MFPT_raw
 from vibdata.datahandler.transforms.TransformDataset import PickledDataset
 from torch.utils.data import DataLoader
@@ -11,6 +11,6 @@ if __name__ == '__main__':
     # for d in dl:
     #     print(d)
     #     break
-    R = experiment_finetunning.run_experiment('datasets')
-    print(R)
-    R.to_csv('results.csv', index=False)
+    experiment_vibnet.run_experiment('datasets')
+    # print(R)
+    # R.to_csv('results.csv', index=False)

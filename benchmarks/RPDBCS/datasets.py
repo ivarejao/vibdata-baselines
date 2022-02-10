@@ -128,13 +128,12 @@ class AppendDataset(torch.utils.data.IterableDataset):
 
 
 COMMON_TRANSFORMERS = [
-    # StandardScaler(on_field='signal', type='all'),
     # NormalizeSampleRate(97656),
     Split(6101*2),
     FFT(discard_first_points=1),
     StandardScaler(on_field='signal', type='all'),
     asType(np.float32, on_field='signal'),
-    toBinaryClassification(),
+    # toBinaryClassification(),
     SelectFields('signal', ['label', 'index'])]
 
 
@@ -157,7 +156,7 @@ SEU_TRANSFORMERS = [FilterByValue(on_field='channel', values=1)] + COMMON_TRANSF
 
 # PU_TRANSFORMERS = COMMON_TRANSFORMERS
 PU_TRANSFORMERS = [
-    Sampling(0.5)
+    Sampling(0.67)
 ] + COMMON_TRANSFORMERS
 
 RPDBCS_TRANSFORMERS = [StandardScaler(on_field='signal', type='all'),
