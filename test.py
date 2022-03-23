@@ -1,16 +1,14 @@
-from benchmarks.RPDBCS import experiment_finetunning, experiment_vibnet
-from vibdata.datahandler import RPDBCS_raw, MFPT_raw
+from benchmarks.RPDBCS import experiment_finetunning2
+# from vibdata.datahandler import RPDBCS_raw, MFPT_raw, XJTU_raw
 from vibdata.datahandler.transforms.TransformDataset import PickledDataset
-from torch.utils.data import DataLoader
 
 if __name__ == '__main__':
-    # D = RPDBCS_raw('datasets', frequency_domain=True)
-    # D = MFPT_raw('datasets')
-    # D = PickledDataset('/tmp/sigdata_cache/rpdbcs')
-    # dl = DataLoader(D, batch_size=32, shuffle=True, drop_last=True)
-    # for d in dl:
-    #     print(d)
-    #     break
-    experiment_vibnet.run_experiment('datasets')
-    # print(R)
-    # R.to_csv('results.csv', index=False)
+    from sys import argv
+    # D = XJTU_raw('datasets', download=True)
+    R = experiment_finetunning2.run_experiment('datasets')
+    print(R)
+    if(len(argv) > 1):
+        foutname = argv[1]
+    else:
+        foutname = 'results.csv'
+    R.to_csv(foutname, index=False)

@@ -1,3 +1,4 @@
+from mixstyle import MixStyle
 from torch import nn
 import torch
 
@@ -29,9 +30,82 @@ class RPDBCS2020Net(nn.Module):
     def forward(self, x):
         if(x.dim() == 2):
             x = x.reshape(x.shape[0], 1, x.shape[1])
-        output = self.convnet(x)
-        output = self.fc(output)
-        return output
+        output1 = self.convnet(x)
+        output2 = self.fc(output1)
+        # NOTE: By default, skorch uses the first element of the tuple as the default output of net.predict() and net.predict_proba().
+        return output2, output1
+
+
+class RPDBCS2020Net2(nn.Module):
+    def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU(), random_state=None):
+        if(random_state is not None):
+            torch.manual_seed(random_state)
+            torch.cuda.manual_seed(random_state)
+        super().__init__()
+        self.convnet = nn.Sequential(  # input is (n_batches, 1, 6100)
+            nn.Conv1d(1, 16, 5, padding=2), activation_function,  # 6100 -> 6096
+            nn.MaxPool1d(4, stride=4),  # 6096 -> 1524
+            nn.Conv1d(16, 32, 5, padding=2), activation_function,  # 1524 -> 1520
+            nn.MaxPool1d(4, stride=4),  # 1520 -> 380
+            nn.Conv1d(32, 64, 5, padding=2), activation_function,  # 380 -> 376
+            nn.MaxPool1d(4, stride=4),  # 376 -> 94
+            nn.Flatten(),
+        )
+
+        n = input_size//4//4//4
+        self.fc1 = nn.Sequential(nn.Dropout(0.1), nn.Linear(64 * n, 192), activation_function)
+        self.fc2 = nn.Linear(192, output_size)
+
+        # print('>>>Number of parameters: ',sum(p.numel() for p in self.parameters()))
+
+    def forward(self, x):
+        if(x.dim() == 2):
+            x = x.reshape(x.shape[0], 1, x.shape[1])
+        output1 = self.convnet(x)
+        output1 = self.fc1(output1)
+        output2 = self.fc2(output1)
+        return output1, output2
+
+
+class RPDBCS2020NetWithMixStyle(nn.Module):
+    def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU(), random_state=None):
+        if(random_state is not None):
+            torch.manual_seed(random_state)
+            torch.cuda.manual_seed(random_state)
+        super().__init__()
+        self.mixstyle = MixStyle(p=0.5, alpha=0.1)
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(1, 16, 5, padding=2), activation_function,  # 6100 -> 6096
+            nn.MaxPool1d(4, stride=4)  # 6096 -> 1524
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(16, 32, 5, padding=2), activation_function,  # 1524 -> 1520
+            nn.MaxPool1d(4, stride=4),  # 1520 -> 380
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv1d(32, 64, 5, padding=2), activation_function,  # 380 -> 376
+            nn.MaxPool1d(4, stride=4),  # 376 -> 94
+            nn.Flatten()
+        )
+
+        n = input_size//4//4//4
+        self.fc = nn.Sequential(nn.Dropout(0.1), nn.Linear(64 * n, 192),
+                                activation_function,
+                                nn.Linear(192, output_size)
+                                )
+
+        # print('>>>Number of parameters: ',sum(p.numel() for p in self.parameters()))
+
+    def forward(self, x):
+        if(x.dim() == 2):
+            x = x.reshape(x.shape[0], 1, x.shape[1])
+        x = self.conv1(x)
+        x = self.mixstyle(x.reshape(-1, x.shape[1], x.shape[2], 1))
+        x = self.conv2(x.reshape(-1, x.shape[1], x.shape[2]))
+        x = self.mixstyle(x.reshape(-1, x.shape[1], x.shape[2], 1))
+        x = self.conv3(x.reshape(-1, x.shape[1], x.shape[2]))
+        x = self.fc(x)
+        return x
 
 
 class BigRPDBCS2020Net(nn.Module):

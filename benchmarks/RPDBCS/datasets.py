@@ -2,7 +2,7 @@ from typing import Iterable, List, Union
 import torch
 from vibdata.datahandler.base import RawVibrationDataset
 from vibdata.datahandler.transforms.TransformDataset import PickledDataset
-from vibdata.datahandler.transforms.signal import FilterByValue, StandardScaler, MinMaxScaler, Split, FFT, asType, ReshapeSingleChannel, SelectFields, toBinaryClassification, NormalizeSampleRate
+from vibdata.datahandler.transforms.signal import FilterByValue, StandardScaler, Split, FFT, asType, SelectFields, toBinaryClassification, NormalizeSampleRate
 from vibdata.datahandler.transforms.signal import Sampling
 import numpy as np
 import pandas as pd
@@ -128,7 +128,7 @@ class AppendDataset(torch.utils.data.IterableDataset):
 
 
 COMMON_TRANSFORMERS = [
-    # NormalizeSampleRate(97656),
+    NormalizeSampleRate(97656),
     Split(6101*2),
     FFT(discard_first_points=1),
     StandardScaler(on_field='signal', type='all'),
@@ -161,3 +161,27 @@ PU_TRANSFORMERS = [
 
 RPDBCS_TRANSFORMERS = [StandardScaler(on_field='signal', type='all'),
                        SelectFields('signal', ['label', 'index'])]
+
+IMS_TRANSFORMERS = [
+    Sampling(0.2)
+] + COMMON_TRANSFORMERS
+
+
+def custom_xjtu_filter(data: dict):
+    metainfo: pd.DataFrame = data['metainfo']
+    mask = metainfo['fault'].notna()
+    metainfo = metainfo[mask].copy()
+    signal = data['signal'][mask]
+    signal = np.hstack(signal).T
+    metainfo['label'] = pd.factorize(metainfo['fault'])[0]
+    metainfo = pd.DataFrame(metainfo.values.repeat(2, axis=0),
+                            columns=metainfo.columns)
+
+    return {'signal': signal,
+            'metainfo': metainfo}
+
+
+XJTU_TRANSFORMERS = [
+    FilterByValue(on_field='intensity', values=[0, 100]),
+    custom_xjtu_filter,
+] + COMMON_TRANSFORMERS

@@ -86,21 +86,6 @@ class MLP6ClassifierPerDomain(nn.Module):
         return X
 
 
-class MyNet(NeuralNetClassifier):
-    def get_loss(self, y_pred, y_true, X=None, training=False):
-        loss_unreduced = super().get_loss(y_pred, y_true, X=X, training=training)
-        if(isinstance(X, dict) and 'sample_weight' in X):
-            sample_weight = X['sample_weight'].to(device=loss_unreduced.device)
-            return (sample_weight * loss_unreduced).mean()
-        return loss_unreduced.mean()
-
-    def transform(self, X):
-        self.module_.transform_mode = True
-        ret = self.predict_proba(X)
-        self.module_.transform_mode = False
-        return ret
-
-
 class NetPerDomain(NeuralNetTransformer):
     def get_loss(self, y_pred, y_true, X=None, training=False):
         return super().get_loss(y_pred, (y_true, X['domain']), X=X, training=training)
@@ -340,9 +325,10 @@ def run_single_experiment(datasets_concat: ConcatenateDataset, datasets_names,
     WANDB_RUN.config.update(configs)
 
     with WANDB_RUN:
-        # torch.manual_seed(RANDOM_STATE)
-        # torch.cuda.manual_seed(RANDOM_STATE)
-        # np.random.seed(RANDOM_STATE)
+        r = np.random.randint(100000)
+        torch.manual_seed(r)
+        torch.cuda.manual_seed(r)
+        np.random.seed(r)
         vibnet_name, vibnet = createVibnet(datasets_concat, datasets_names,
                                            lr=lr, encode_size=encode_size, margin=margin,
                                            add_data=(Dtarget, dname))
@@ -376,7 +362,7 @@ def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
     lr_list = [1e-3]
     encode_size_list = [8, 12, 16, 20, 24, 32, 48]
     margin_list = [0.5]
-    reruns = 3
+    reruns = 2
 
     n_exps = len(datasets_transformed)*len(margin_list)*len(lr_list)*len(encode_size_list)*len(domain_balance_mode_list)
 

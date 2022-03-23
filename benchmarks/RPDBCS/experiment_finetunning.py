@@ -7,9 +7,9 @@ from torch.nn.modules.loss import TripletMarginLoss
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Subset, TensorDataset
 from vibdata.datahandler.transforms.signal import SelectFields
-from .datasets import CWRU_TRANSFORMERS, PU_TRANSFORMERS, SEU_TRANSFORMERS, MFPT_TRANSFORMERS, RPDBCS_TRANSFORMERS, ConcatenateDataset, AppendDataset, TransformsDataset
+from .datasets import COMMON_TRANSFORMERS, CWRU_TRANSFORMERS, IMS_TRANSFORMERS, PU_TRANSFORMERS, SEU_TRANSFORMERS, MFPT_TRANSFORMERS, RPDBCS_TRANSFORMERS, ConcatenateDataset, AppendDataset, TransformsDataset
 from .models.RPDBCS2020Net import BigRPDBCS2020Net, RPDBCS2020Net, MLP6_backbone, CNN5, SuperFast_backbone, FastRPDBCS2020Net
-from vibdata.datahandler import CWRU_raw, PU_raw, MFPT_raw, RPDBCS_raw
+from vibdata.datahandler import CWRU_raw, PU_raw, MFPT_raw, RPDBCS_raw, IMS_raw, UOC_raw
 from vibdata.datahandler.transforms.TransformDataset import PickledDataset, transform_and_saveDataset
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
@@ -35,6 +35,8 @@ import wandb
 from datetime import datetime
 from pathlib import Path
 from .utils import DomainValidSplit, EstimatorDomainScoring, metric_domain, ExternalDatasetScoringCallback, loadTransformDatasets
+from GradReversal import GradientReversal
+from domain_adap import DomainAdapLoss, DomainAdapCallbackScore
 
 RANDOM_STATE = 42
 torch.manual_seed(RANDOM_STATE)
@@ -49,6 +51,8 @@ DATASETS = [
     ('mfpt', MFPT_raw, {}, MFPT_TRANSFORMERS),
     ('cwru', CWRU_raw, {}, CWRU_TRANSFORMERS),
     # ('seu', SEU_raw, SEU_TRANSFORMERS),
+    # ('IMS', IMS_raw, {}, IMS_TRANSFORMERS),
+    ('UOC', UOC_raw, {}, COMMON_TRANSFORMERS),
     ('pu', PU_raw, {}, PU_TRANSFORMERS),
     ('rpdbcs', RPDBCS_raw, {'frequency_domain': True}, RPDBCS_TRANSFORMERS),
 ]
@@ -79,6 +83,44 @@ class MetricNet(nn.Module):
 
     def forward(self, X, **kwargs):
         return self.backbone(X)
+
+
+class MetricNetPerDomain(nn.Module):
+    def __init__(self, n_domains, input_size, encode_size, activation_function=nn.PReLU(), load_bb_weights_fpath=None,
+                 gradient_rev_lambda=1.0, head_encode_size=32) -> None:
+        super().__init__()
+        if(load_bb_weights_fpath is not None):
+            self.backbone = torch.load(load_bb_weights_fpath)
+        else:
+            self.backbone = RPDBCS2020Net(input_size=input_size, output_size=encode_size,
+                                          activation_function=activation_function)
+        self.head_encode_size = head_encode_size
+        self.heads_reg = nn.Sequential(activation_function,
+                                       nn.Linear(encode_size, self.head_encode_size*n_domains))
+        self.heads_domain = nn.Sequential(
+            GradientReversal(lambda_=1000000),
+            activation_function,
+            # nn.Linear(encode_size, self.head_encode_size*n_domains)
+            nn.Linear(encode_size, self.head_encode_size)
+            # nn.Linear(encode_size, n_domains)
+        )
+        self.n_domains = n_domains
+        self.transform_mode = False
+
+    def forward(self, X, domain, **kwargs):
+        X = self.backbone(X)
+        if(self.transform_mode):
+            return X
+        Xc = self.heads_reg(X).reshape(-1, self.n_domains, self.head_encode_size)
+        Xc = Xc[:, domain]
+        Xc = Xc[torch.arange(len(Xc)), domain]
+
+        Xd = self.heads_domain(X)
+
+        # Xd = self.heads_domain(X).reshape(-1, self.n_domains, self.head_encode_size)
+        # Xd = Xd[:, domain]
+        # Xd = Xd[torch.arange(len(Xd)), domain]
+        return Xd, Xc
 
 
 class MLP6ClassifierPerDomain(nn.Module):
@@ -116,7 +158,7 @@ class MyNet(NeuralNetClassifier):
 
 class NetPerDomain(NeuralNetTransformer):
     def get_loss(self, y_pred, y_true, X=None, training=False):
-        return super().get_loss(y_pred, (y_true, X['domain']), X=X, training=training)
+        return super().get_loss(y_pred, (X['domain'], y_true), X=X, training=training)
 
     def transform(self, X):
         self.module_.transform_mode = True
@@ -131,7 +173,8 @@ class LossPerDomain(nn.Module):
         self.base_loss = base_loss(**kwargs)
 
     def forward(self, yp, Y):
-        yt, domain = Y
+        domain, yt = Y
+        # ycp, ydp = yp
 
         uniq_domains = torch.unique(domain)
         loss = 0.0
@@ -149,8 +192,8 @@ class LossPerDomain(nn.Module):
 
 DEFAULT_NETPARAMS = {
     'device': 'cuda',
-    'criterion': nn.CrossEntropyLoss,  # 'criterion__reduction': 'none',
-    'max_epochs': 100,
+    # 'criterion': nn.CrossEntropyLoss,
+    'max_epochs': 2,
     'batch_size': 256,
     'train_split': ValidGroupSplit(cv=0.1, stratified=True, random_state=RANDOM_STATE),
     'iterator_train': BalancedDataLoader,
@@ -185,16 +228,14 @@ def commonCallbacks(to_save_fpath: Union[str, Path] = None) -> List[skorch.callb
     lr_scheduler_cb = skorch.callbacks.LRScheduler(scheduler_policy, monitor='valid_loss',
                                                    patience=20, factor=0.1)
 
-    callbacks = [checkpoint_callback, loadbest_net_callback, earlystop_cb, lr_scheduler_cb]
+    callbacks = [checkpoint_callback, loadbest_net_callback, earlystop_cb,
+                 lr_scheduler_cb]
     if(to_save_fpath is not None):
         save_model_cb = skorch.callbacks.TrainEndCheckpoint(f_params=to_save_fpath.name, dirname=str(to_save_fpath.parent),
                                                             f_optimizer=None, f_criterion=None, f_history=None)
         callbacks += [save_model_cb]
 
     return callbacks
-
-
-def _f1macro(yt, yp): return f1_score(yt, yp, average='macro')
 
 
 class _f1macro_domain:
@@ -207,27 +248,6 @@ class _f1macro_domain:
         mask = domain == self.i
         assert(mask.sum() > 0)
         return f1_score(y[mask], yp[mask], average='macro')
-
-
-def _tripletloss(yt, xe):
-    xe = torch.cuda.FloatTensor(xe)
-    yt = torch.cuda.IntTensor(yt)
-    xe = xe-xe.mean()
-    xe = xe/xe.std()
-    tripletloss_func = TripletMarginLoss(margin=0.3, reducer=MeanReducer(), triplets_per_anchor=1)
-
-    D = TensorDataset(xe, yt)
-    dl = DataLoader(D, batch_size=1024, shuffle=True)
-
-    loss = 0.0
-    n = 0
-    for xe_i, yt_i in dl:
-        try:
-            loss += tripletloss_func.forward(xe_i, yt_i)
-        except:
-            loss += 0.5
-        n += 1
-    return loss/n
 
 
 def _positives_triplets_loss(yt, xe):
@@ -259,8 +279,24 @@ def _pipelinedQDA(yt, xe):
     return result[0]
 
 
+class DomainRecognizerCallback(EstimatorEpochScoring):
+    def __init__(self, domains, estimator, metric='f1_macro', name='score', lower_is_better=False, use_caching=False, on_train=False, **kwargs):
+        """
+        Args:
+            domains (array of ints): array of same size as the dataset, telling the domain each sample belongs.
+        """
+        super().__init__(estimator, metric, name, lower_is_better, use_caching, on_train, **kwargs)
+        self.domains = domains
+
+    def get_test_data(self, dataset_train: Subset, dataset_valid: Subset):
+        X, Y, P = super().get_test_data(dataset_train, dataset_valid)
+        dtrain = self.domains[dataset_train.indices]
+        dvalid = self.domains[dataset_valid.indices]
+        return X, (dtrain, dvalid), P
+
+
 def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
-                 lr, encode_size, margin,
+                 lr, encode_size, margin, gradient_rev_lambda=1.0,
                  add_data: Tuple[PickledDataset, str] = None):
     class _transform_out:
         """
@@ -280,27 +316,39 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
 
     global WANDB_RUN
 
-    num_classes = [len(np.unique(d.metainfo['label'])) for d in dataset.datasets]
+    # num_classes = [len(np.unique(d.metainfo['label'])) for d in dataset.datasets]
 
     module_params = {
-        'n_classes': num_classes,
+        # 'n_classes': num_classes,
+        'n_domains': len(dataset_names),
         'encode_size': encode_size, 'input_size': dataset.getInputSize(),
+        'gradient_rev_lambda': gradient_rev_lambda
     }
     module_params = {"module__"+key: v for key, v in module_params.items()}
-    module_params['module'] = MetricNet
+    module_params['module'] = MetricNetPerDomain
 
     callbacks = commonCallbacks('saved_models/tripletnet/vibnet_%s.pt' % "-".join(dataset_names))
     for i, dname in enumerate(dataset_names):
         if(dname is None):
-            continue
+            raise Exception()
 
-        cb = EpochScoring(metric_domain(i, _tripletloss), lower_is_better=True,
-                          name="valid/triplet_loss_%s" % dname, on_train=False)
-        callbacks.append(cb)
+        # cb = EpochScoring(metric_domain(i, _tripletloss), lower_is_better=True,
+        #                   name="valid/triplet_loss_%s" % dname, on_train=False)
+        # callbacks.append(cb)
+        # cb = EstimatorDomainScoring(i, dataset.getDomains(),
+        #                             QuadraticDiscriminantAnalysis(), name='f1_macro_backbone_%s' % dname,
+        #                             metric='f1_macro', lower_is_better=False, use_transform=True)
+
+        # callbacks.append(cb)
         cb = EstimatorDomainScoring(i, dataset.getDomains(),
-                                    QuadraticDiscriminantAnalysis(), name='f1_macro_%s' % dname,
-                                    metric='f1_macro', lower_is_better=False)
+                                    QuadraticDiscriminantAnalysis(), name='f1_macro_head_%s' % dname,
+                                    metric='f1_macro', lower_is_better=False, use_transform=False)
         callbacks.append(cb)
+
+    cb = DomainRecognizerCallback(dataset.getDomains(),
+                                  QuadraticDiscriminantAnalysis(), name='f1_macro_dreg',
+                                  metric='f1_macro', lower_is_better=False, use_transform=False)
+    callbacks.append(cb)
 
     if(add_data is not None):
         d, dname = add_data
@@ -319,14 +367,30 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
                                                         metrics=ext_metrics)
         callbacks.append(score_external)
 
+    callbacks.append(PassthroughScoring('valid/da_loss', on_train=False))
+    callbacks.append(PassthroughScoring('valid/cl_loss', on_train=False))
+    callbacks.append(PassthroughScoring('train/da_loss', on_train=True))
+    callbacks.append(PassthroughScoring('train/cl_loss', on_train=True))
     callbacks.append(WandbLoggerExtended(WANDB_RUN))
 
     net_params = DEFAULT_NETPARAMS.copy()
     # net_params['criterion__reduction'] = 'none'
-    net_params.update({'criterion': LossPerDomain,
-                       'criterion__base_loss': TripletMarginLoss, 'criterion__reducer': MeanReducer(),
-                       'criterion__margin': margin, 'criterion__triplets_per_anchor': 'all'
-                       })
+    # net_params.update({'criterion': LossPerDomain,
+    #                    'criterion__base_loss': TripletMarginLoss, 'criterion__reducer': MeanReducer(),
+    #                    'criterion__margin': margin, 'criterion__triplets_per_anchor': 'all'
+    #                    })
+
+    ### Criterion parameters ###
+    net_params.update({
+        'max_epochs': 100,
+        'criterion': DomainAdapLoss,
+        'criterion__cl_criterion': TripletMarginLoss(margin=0.5, reducer=MeanReducer(), triplets_per_anchor='all'),
+        'criterion__da_criterion': TripletMarginLoss(margin=0.5, reducer=MeanReducer(), triplets_per_anchor='all'),
+        # 'criterion__da_criterion': torch.nn.CrossEntropyLoss(),
+        'criterion__macroavg_clloss_perdomain': True,
+        'criterion__alpha': 1.0
+    })
+    ############################
     net_params['callbacks'] = callbacks
     net_params['train_split'] = DomainValidSplit()
     # net_params['train_split'] = ValidSplit(cv=0.1, stratified=True, random_state=RANDOM_STATE)
@@ -343,7 +407,7 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
     return (name, clf)
 
 
-def createFineTNet(dataset: PickledDataset, encode_size, finetunning_on=True):
+def createFineTNet(dataset: PickledDataset, encode_size, finetunning_on=True) -> Tuple[str, NeuralNetBase]:
     global WANDB_RUN
     num_classes = len(np.unique(dataset.metainfo['label']))
 
@@ -357,12 +421,7 @@ def createFineTNet(dataset: PickledDataset, encode_size, finetunning_on=True):
 
     callbacks = [EstimatorEpochScoring(QuadraticDiscriminantAnalysis(), 'f1_macro',
                                        name='QDA_f1_macro', lower_is_better=False, use_caching=False)]
-    # callbacks = [
-    #     EpochScoring('f1_macro', False, on_train=False, name='valid/f1_macro'),
-    #     EpochScoring('f1_macro', False, on_train=True, name='train/f1_macro')]
-
     callbacks += commonCallbacks()
-
     callbacks.append(WandbLoggerExtended(WANDB_RUN))
 
     net_params = DEFAULT_NETPARAMS.copy()
@@ -371,9 +430,10 @@ def createFineTNet(dataset: PickledDataset, encode_size, finetunning_on=True):
         'criterion': TripletMarginLoss,
         'criterion__margin': 0.5, 'criterion__triplets_per_anchor': 'all', 'criterion__reducer': MeanReducer()
     })
-    WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in net_params.items()})
-    WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in module_params.items()})
-    WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in DEFAULT_OPTIM_PARAMS.items()})
+    if(WANDB_RUN is not None):
+        WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in net_params.items()})
+        WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in module_params.items()})
+        WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in DEFAULT_OPTIM_PARAMS.items()})
     name = "TripletNet-finetunned"
     # clf = NeuralNetClassifier(**net_params, **module_params, **DEFAULT_OPTIM_PARAMS,
     #                           cache_dir=None)
@@ -405,7 +465,8 @@ def _transform_output(data: dict):
 
 
 def run_single_experiment(datasets_concat: ConcatenateDataset, datasets_names, Dtarget: PickledDataset, dname: str,
-                          sampler, d_percentage, finetunning_on=True, train_vibnet=True) -> Sequence[Tuple]:
+                          sampler, d_percentage, finetunning_on=True, train_vibnet=True,
+                          gradient_rev_lambda=1.0) -> Sequence[Tuple]:
     global WANDB_RUN
 
     configs = {'target_dataset': dname, 'd_percentage': d_percentage, 'finetunning_on': finetunning_on}
@@ -424,8 +485,8 @@ def run_single_experiment(datasets_concat: ConcatenateDataset, datasets_names, D
             torch.manual_seed(RANDOM_STATE)
             torch.cuda.manual_seed(RANDOM_STATE)
             np.random.seed(RANDOM_STATE)
-            vibnet_name, vibnet = createVibnet(datasets_concat, datasets_names,
-                                               add_data=(Dtarget, dname))
+            vibnet_name, vibnet = createVibnet(datasets_concat, datasets_names, lr=1e-3, encode_size=32, margin=0.5,
+                                               add_data=(Dtarget, dname), gradient_rev_lambda=gradient_rev_lambda)
 
             # final_dataset = AppendDataset(datasets_concat, {'sample_weight': sample_weights})
             vibnet.fit(datasets_concat, Yc, groups=groups_ids)
@@ -436,48 +497,64 @@ def run_single_experiment(datasets_concat: ConcatenateDataset, datasets_names, D
     else:
         source_names = "+".join(datasets_names)
 
+    ### Preparing dataset ###
+    Yc = Dtarget.metainfo['label']
+    group_ids = Dtarget.metainfo['index']
+    Dtarget_transf = TransformsDataset(Dtarget, _transform_output)
+    Dtarget_transf.labels = Yc
+
+    assert(len(np.unique(group_ids)) > 1)
+    train_idxs, test_idxs = next(sampler.split(Yc, Yc, group_ids))
+    train_idxs = train_idxs[:int(len(train_idxs)*d_percentage)]
+
+    assert(len(train_idxs) > 2)
+
+    Yc_train, Yc_test = Yc[train_idxs], Yc[test_idxs]
+    assert(len(np.unique(Yc_train)) > 1)
+    Dtarget_train = Subset(Dtarget_transf, train_idxs)
+    Dtarget_test = Subset(Dtarget_transf, test_idxs)
+    ##########################
+    Results = []
+
+    ### Zero epochs testing ###
+    torch.manual_seed(RANDOM_STATE)
+    torch.cuda.manual_seed(RANDOM_STATE)
+    np.random.seed(RANDOM_STATE)
+    WANDB_RUN = None
+    netname, net = createFineTNet(Dtarget, finetunning_on=finetunning_on, encode_size=32)
+    net['metricnet'].initialize()
+    net['clf'].fit(net['metricnet'].transform(Dtarget_train), Yc_train)
+
+    Ycp_test = net.predict(Dtarget_test)
+    score = f1_score(Yc_test, Ycp_test, average='macro')
+    Results.append((netname, source_names, dname, "test", 'fmacro', score, d_percentage, finetunning_on, False, gradient_rev_lambda))
+
+    Ycp_train = net.predict(Dtarget_train)
+    score = f1_score(Yc_train, Ycp_train, average='macro')
+    Results.append((netname, source_names, dname, "train", 'fmacro', score, d_percentage, finetunning_on, False, gradient_rev_lambda))
+    ###########################
+
     WANDB_RUN = wandb.init(project="finetunning_vibnet", entity="lucashsmello", group=CURRENT_TIME,
                            job_type='finetunning')
     WANDB_RUN.config.update({'source_datasets': source_names})
     WANDB_RUN.config.update(configs)
-    netname, net = createFineTNet(Dtarget, finetunning_on=finetunning_on)
 
+    torch.manual_seed(RANDOM_STATE)
+    torch.cuda.manual_seed(RANDOM_STATE)
+    np.random.seed(RANDOM_STATE)
+    netname, net = createFineTNet(Dtarget, finetunning_on=finetunning_on, encode_size=32)
+
+    # net.fit(Dtarget_train, Yc_train, groups=group_ids[train_idxs])
     with WANDB_RUN:
-        torch.manual_seed(RANDOM_STATE)
-        torch.cuda.manual_seed(RANDOM_STATE)
-        np.random.seed(RANDOM_STATE)
-        Yc = Dtarget.metainfo['label']
-        group_ids = Dtarget.metainfo['index']
-        Dtarget_transf = TransformsDataset(Dtarget, _transform_output)
-        Dtarget_transf.labels = Yc
-
-        assert(len(np.unique(group_ids)) > 1)
-        train_idxs, test_idxs = next(sampler.split(Yc, Yc, group_ids))
-        train_idxs = train_idxs[:int(len(train_idxs)*d_percentage)]
-
-        assert(len(train_idxs) > 2)
-
-        Yc_train, Yc_test = Yc[train_idxs], Yc[test_idxs]
-        assert(len(np.unique(Yc_train)) > 1)
-        Dtarget_train = Subset(Dtarget_transf, train_idxs)
-        Dtarget_test = Subset(Dtarget_transf, test_idxs)
-        # net.fit(Dtarget_train, Yc_train, groups=group_ids[train_idxs])
         net.fit(Dtarget_train, Yc_train, metricnet__groups=group_ids[train_idxs])
 
-    Results = []
-
-    # if(isinstance(net, NeuralNetTransformer)):
-    #     clf = make_pipeline(net,
-    #                         RandomForestClassifier(n_estimators=300, min_impurity_decrease=1e-5, n_jobs=-1))
-    # else:
-    #     clf = net
     Ycp_test = net.predict(Dtarget_test)
     score = f1_score(Yc_test, Ycp_test, average='macro')
-    Results.append((netname, source_names, dname, "test", 'fmacro', score, d_percentage, finetunning_on))
+    Results.append((netname, source_names, dname, "test", 'fmacro', score, d_percentage, finetunning_on, True, gradient_rev_lambda))
 
     Ycp_train = net.predict(Dtarget_train)
     score = f1_score(Yc_train, Ycp_train, average='macro')
-    Results.append((netname, source_names, dname, "train", 'fmacro', score, d_percentage, finetunning_on))
+    Results.append((netname, source_names, dname, "train", 'fmacro', score, d_percentage, finetunning_on, True, gradient_rev_lambda))
 
     return Results
 
@@ -493,7 +570,8 @@ def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
     # All datasets
     Results = []
 
-    d_percentage_list = [0.1, 0.25, 0.5, 1.0]
+    d_percentage_list = [0.75]  # [0.1, 0.25, 0.5, 1.0]
+    gradient_rev_lambda_list = [0.0, 1.0]
     finetunning_on_options = [True, False]
 
     with tqdm(total=len(datasets_transformed) * len(d_percentage_list) * len(finetunning_on_options)) as pbar:
@@ -501,22 +579,24 @@ def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
             for i, (dname, Dtarget) in enumerate(datasets_transformed):
                 train_vibnet = True
                 for d_percentage in d_percentage_list:
-                    if(d_percentage < 0.3 and len(Dtarget) < 500):
+                    if(d_percentage*len(Dtarget) < 150):
                         continue
-                    pbar.set_description(dname)
+                    for gradient_rev_lambda in gradient_rev_lambda_list:
+                        pbar.set_description(dname)
 
-                    datasets_names_sources = datasets_names[:i] + datasets_names[i+1:]
-                    datasets_concat = ConcatenateDataset([d for j, (_, d) in enumerate(datasets_transformed) if j != i],
-                                                         None)
+                        datasets_names_sources = datasets_names[:i] + datasets_names[i+1:]
+                        datasets_concat = ConcatenateDataset([d for j, (_, d) in enumerate(datasets_transformed) if j != i],
+                                                             None)
 
-                    R = run_single_experiment(datasets_concat, datasets_names_sources, Dtarget, dname,
-                                              sampler, d_percentage, finetunning_on, train_vibnet=train_vibnet)
-                    Results += R
-                    pbar.update()
-                    train_vibnet = False
+                        R = run_single_experiment(datasets_concat, datasets_names_sources, Dtarget, dname,
+                                                  sampler, d_percentage, finetunning_on, train_vibnet=train_vibnet,
+                                                  gradient_rev_lambda=gradient_rev_lambda)
+                        Results += R
+                        pbar.update()
+                        train_vibnet = False
 
     columns = ['classifier_name', 'source_dataset', 'target_dataset', 'test_sample', 'metric_name',
-               'value', 'd_percentage', 'finetunning_on']
+               'value', 'd_percentage', 'finetunning_on', 'is_trained', 'gradient_rev_lambda']
     Results = pd.DataFrame(Results, columns=columns)
     return Results
 
@@ -526,4 +606,10 @@ TODO:
 - Testar sem normalização do RPDBCS
 - Testar normalizar por sample=4096
 - ver questão do sample_rate ser muito alto (94000) para um numero de pontos baixo (6100)
+"""
+
+
+"""
+O grad_rev_lambda e alpha parece não surtir efeito forte. 
+Talvez seja porque não triplet margin não seja uma boa para isso. o da_loss tá alto, mas o da-QDA-fmacro (medido no espaço de caracteristicas backbone) é baixo.
 """

@@ -1,14 +1,16 @@
+import torch
 import numpy as np
 from sklearn.model_selection import StratifiedGroupKFold
 from torch.utils.data.dataset import Subset
 from skorch_extra.callbacks import EstimatorEpochScoring
 import skorch
 from skorch.callbacks.base import Callback
-from typing import Callable, List, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Tuple
 from tqdm import tqdm
 import os
 from sklearn.pipeline import make_pipeline
 from vibdata.datahandler.transforms.TransformDataset import PickledDataset, transform_and_saveDataset
+from pytorch_balanced_sampler.sampler import BalancedDataLoader
 
 
 class DomainValidSplit:
@@ -52,10 +54,12 @@ class EstimatorDomainScoring(EstimatorEpochScoring):
         idxs_train = dtrain == self.i
         idxs_valid = dvalid == self.i
         X, Y, P = super().get_test_data(dataset_train, dataset_valid)
+        assert(Y[0] is None)  # FIXME when Y is not None.
         Xtr, Xv = X
         Xtr = Subset(Xtr, np.where(idxs_train)[0])
         Xv = Subset(Xv, np.where(idxs_valid)[0])
-        return (Xtr, Xv), Y, P  # FIXME when Y is not None.
+
+        return (Xtr, Xv), Y, P
 
 
 class metric_domain:
@@ -105,9 +109,135 @@ class ExternalDatasetScoringCallback(Callback):
 def loadTransformDatasets(data_root_dir, datasets: List[Tuple], cache_dir=None) -> List[PickledDataset]:
     datasets_transformed = []
     for dname, dataset_raw_cls, params, transforms in tqdm(datasets, desc="Loading and transforming datasets"):
+        print(f"Transforming {dname}...")
         dataset_raw = dataset_raw_cls(data_root_dir, download=True, **params)
         data_dir = os.path.join(cache_dir, dname)
-        D = transform_and_saveDataset(dataset_raw, make_pipeline(*transforms), data_dir, batch_size=6000)
+        D = transform_and_saveDataset(dataset_raw, transforms, data_dir, batch_size=6000)
         print(">>>Length of %s: %d" % (dname, len(D)))
         datasets_transformed.append((dname, D))
     return datasets_transformed
+
+
+class SplitLosses(torch.nn.Module):
+    def __init__(self, losses_list: List, lambs: List[float] = None,
+                 split_x_list: List = None, split_y_list: List = None):
+        super().__init__()
+        self.losses_list = losses_list
+        if(split_y_list is None):
+            self.split_y_list = [None]*len(losses_list)
+        else:
+            self.split_y_list = split_y_list
+        if(split_x_list is None):
+            self.split_x_list = [None]*len(losses_list)
+        else:
+            self.split_x_list = split_x_list
+        if(lambs is None):
+            lambs = [1.0]*len(losses_list)
+        self.lambs = lambs
+        assert(len(lambs) == len(losses_list))
+
+    def forward(self, X: Tuple, Y):
+        def _process_spl(spl, X):
+            if(spl is None):
+                xs = X
+            else:
+                if(isinstance(spl, int)):
+                    xs = X[spl]
+                else:
+                    xs = tuple([X[i] for i in spl])
+            return xs
+
+        l = torch.tensor(0.0, device=X[0].device)
+        ret: Dict[str, Any] = {}
+        for lossf, splx, sply, lamb in zip(self.losses_list, self.split_x_list, self.split_y_list, self.lambs):
+            if(isinstance(lossf, tuple)):
+                loss_name, lossf = lossf
+            else:
+                loss_name = None
+
+            ys = _process_spl(sply, Y)
+            xs = _process_spl(splx, X)
+
+            lll = lossf(xs, ys)
+            if(isinstance(lll, dict)):
+                lll = lll['loss']
+            l += lamb*lll
+            if(loss_name is not None):
+                ret[loss_name] = lll
+
+        if(len(ret) != 0):
+            ret['loss'] = l
+            return ret
+        return l
+
+
+class MacroAvgLoss(torch.nn.Module):
+    def __init__(self, base_loss: torch.nn.Module, positive_label=0, Y_index=None) -> None:
+        super().__init__()
+        self.positive_label = positive_label
+        self.base_loss = base_loss
+        self.Y_index = Y_index
+
+    @staticmethod
+    def _maskTuple(X, mask):
+        if(isinstance(X, tuple)):
+            return tuple([x[mask] for x in X])
+        return X[mask]
+
+    def forward(self, X, Y):
+        if(self.Y_index is None):
+            assert(not isinstance(Y, tuple))
+            ylabels = Y
+        else:
+            ylabels = Y[self.Y_index]
+
+        pos_labels_mask = ylabels == self.positive_label
+        neg_labels_mask = ylabels != self.positive_label
+
+        if(pos_labels_mask.sum() >= 1):
+            posX = MacroAvgLoss._maskTuple(X, pos_labels_mask)
+            posY = MacroAvgLoss._maskTuple(Y, pos_labels_mask)
+            loss_pos = self.base_loss(posX, posY)
+        else:
+            loss_pos = 0.0
+
+        if(neg_labels_mask.sum() >= 1):
+            negX = MacroAvgLoss._maskTuple(X, neg_labels_mask)
+            negY = MacroAvgLoss._maskTuple(Y, neg_labels_mask)
+            loss_neg = self.base_loss(negX, negY)
+        else:
+            loss_neg = 0.0
+
+        if(isinstance(loss_pos, dict)):
+            return {k: (loss_neg[k]+vpos)/2 for k, vpos in loss_pos.items()}
+        return (loss_neg+loss_pos)/2
+
+
+class DomainBalancedDataLoader(BalancedDataLoader):
+    @staticmethod
+    def _get_labels_domain(dataset):
+        labels = BalancedDataLoader._get_labels(dataset)
+        domains = DomainBalancedDataLoader._get_domain(dataset)
+        return labels
+        # m = labels.max()
+        # return labels + (m+1)*domains
+
+    @staticmethod
+    def _get_domain(dataset):
+        if isinstance(dataset, torch.utils.data.Subset):
+            domains = DomainBalancedDataLoader._get_domain(dataset.dataset)
+            return domains[dataset.indices]
+
+        """
+        Guesses how to get the domains.
+        """
+        if hasattr(dataset, 'getDomains'):
+            return dataset.getDomains()
+        if hasattr(dataset, 'domains'):
+            return dataset.domains
+        raise NotImplementedError("DomainBalancedDataLoader: Domains were not found!")
+
+    def __init__(self, dataset, batch_size=1, num_workers=0, collate_fn=None, pin_memory=False, worker_init_fn=None, circular_list=True, shuffle=False, random_state=None, **kwargs):
+        super().__init__(dataset, batch_size, num_workers, collate_fn, pin_memory,
+                         worker_init_fn, callback_get_label=DomainBalancedDataLoader._get_labels_domain,
+                         circular_list=circular_list, shuffle=shuffle, random_state=random_state, **kwargs)
