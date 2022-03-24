@@ -344,7 +344,6 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
 
     return (name, clf)
 
-
 def createFineTNet(dataset, encode_size, finetunning_on=True) -> Tuple[str, NeuralNetBase]:
     global WANDB_RUN
     # num_classes = len(np.unique(dataset.metainfo['label']))

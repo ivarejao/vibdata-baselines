@@ -71,6 +71,10 @@ class LossPerDomain(nn.Module):
 
 
 class DomainAdapCallbackScore:
+    """
+    DEPRECATED
+    """
+
     def __init__(self, scorer, on_class=True) -> None:
         self.scorer = scorer
         self.on_class = on_class
@@ -85,11 +89,17 @@ class DomainAdapCallbackScore:
             yt = y[:, 0]
         return self.scorer(yt, yp.detach().numpy())
 
+
 class DomainRecognizerCallback(EstimatorEpochScoring):
+    """
+    Applies a sklearn estimator on top of the encoded features in order to recognize the domain each sample belongs.
+
+    """
+
     def __init__(self, domains, estimator, metric='f1_macro', name='score', lower_is_better=False, use_caching=False, on_train=False, **kwargs):
         """
         Args:
-            domains (array of ints): array of same size as the dataset, telling the domain each sample belongs.
+            domains (array of ints): array of the same size as the dataset, telling the domain each sample belongs.
         """
         super().__init__(estimator, metric, name, lower_is_better, use_caching, on_train, **kwargs)
         self.domains = domains

@@ -5,29 +5,6 @@ from itertools import combinations
 
 # Source: https://github.com/DenisDsh/PyTorch-Deep-CORAL/blob/master/coral.py
 
-
-# class CoralLoss(torch.nn.Module):
-#     def __init__(self, clf_loss, target_domain_id, lamb=1.0):
-#         super().__init__()
-#         self.clf_loss = clf_loss
-#         self.lamb = lamb
-#         self.target_domain_id = target_domain_id
-
-#     def forward(self, Xpred, Y):
-#         domain, yt = Y
-#         Xtarget, Xsrc = Xpred
-#         # Xtarget = Xpred[domain == self.target_domain_id]
-#         source_domain_mask = domain != self.target_domain_id
-#         # Xsrc = Xpred[source_domain_mask]
-#         yt_src = yt[source_domain_mask]
-#         domain_src = domain[source_domain_mask]
-
-#         coralloss = coral(Xsrc, Xtarget)
-#         clfloss = self.clf_loss(Xsrc, (domain_src, yt_src))
-#         print(coralloss)
-#         return {'loss': clfloss,# + self.lamb*coralloss,
-#                 'coral_loss': coralloss, 'clf_loss': clfloss}
-
 class CoralLoss(torch.nn.Module):
     def __init__(self, clf_loss=None, lamb=1.0):
         super().__init__()
@@ -89,3 +66,6 @@ def coral(source, target):
     mean_diff = (mean_s-mean_t).pow(2).mean()
 
     return loss/(4*d*d), mean_diff
+
+
+

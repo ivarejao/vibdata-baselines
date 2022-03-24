@@ -4,6 +4,10 @@ import torch
 
 
 class RPDBCS2020Net(nn.Module):
+    """
+    Network architecture used in https://doi.org/10.1109/IJCNN48605.2020.9207133
+    """
+
     def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU(), random_state=None):
         if(random_state is not None):
             torch.manual_seed(random_state)
@@ -36,38 +40,11 @@ class RPDBCS2020Net(nn.Module):
         return output2, output1
 
 
-class RPDBCS2020Net2(nn.Module):
-    def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU(), random_state=None):
-        if(random_state is not None):
-            torch.manual_seed(random_state)
-            torch.cuda.manual_seed(random_state)
-        super().__init__()
-        self.convnet = nn.Sequential(  # input is (n_batches, 1, 6100)
-            nn.Conv1d(1, 16, 5, padding=2), activation_function,  # 6100 -> 6096
-            nn.MaxPool1d(4, stride=4),  # 6096 -> 1524
-            nn.Conv1d(16, 32, 5, padding=2), activation_function,  # 1524 -> 1520
-            nn.MaxPool1d(4, stride=4),  # 1520 -> 380
-            nn.Conv1d(32, 64, 5, padding=2), activation_function,  # 380 -> 376
-            nn.MaxPool1d(4, stride=4),  # 376 -> 94
-            nn.Flatten(),
-        )
-
-        n = input_size//4//4//4
-        self.fc1 = nn.Sequential(nn.Dropout(0.1), nn.Linear(64 * n, 192), activation_function)
-        self.fc2 = nn.Linear(192, output_size)
-
-        # print('>>>Number of parameters: ',sum(p.numel() for p in self.parameters()))
-
-    def forward(self, x):
-        if(x.dim() == 2):
-            x = x.reshape(x.shape[0], 1, x.shape[1])
-        output1 = self.convnet(x)
-        output1 = self.fc1(output1)
-        output2 = self.fc2(output1)
-        return output1, output2
-
-
 class RPDBCS2020NetWithMixStyle(nn.Module):
+    """
+    MixStyle: See https://arxiv.org/abs/2107.02053
+    """
+
     def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU(), random_state=None):
         if(random_state is not None):
             torch.manual_seed(random_state)
@@ -93,8 +70,6 @@ class RPDBCS2020NetWithMixStyle(nn.Module):
                                 activation_function,
                                 nn.Linear(192, output_size)
                                 )
-
-        # print('>>>Number of parameters: ',sum(p.numel() for p in self.parameters()))
 
     def forward(self, x):
         if(x.dim() == 2):
@@ -167,6 +142,10 @@ class FastRPDBCS2020Net(nn.Module):
 
 
 class MLP6_backbone(nn.Module):
+    """
+    Adapted from https://github.com/ZhaoZhibin/DL-based-Intelligent-Diagnosis-Benchmark/blob/master/models/MLP.py
+    """
+
     def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU()):
         super(MLP6_backbone, self).__init__()
         self.fc1 = nn.Sequential(
@@ -201,6 +180,10 @@ class MLP6_backbone(nn.Module):
 
 
 class SuperFast_backbone(nn.Module):
+    """
+    For debug purposes only.
+    """
+
     def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU()):
         super(SuperFast_backbone, self).__init__()
         self.fc1 = nn.Sequential(
@@ -213,6 +196,10 @@ class SuperFast_backbone(nn.Module):
 
 
 class CNN5(nn.Module):
+    """
+    Adapted from https://github.com/ZhaoZhibin/DL-based-Intelligent-Diagnosis-Benchmark/blob/master/models/CNN_1d.py
+    """
+
     def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU()):
         super(CNN5, self).__init__()
 

@@ -6,6 +6,15 @@ from pytorch_metric_learning.utils import loss_and_miner_utils as lmu
 
 class BarlowTwins(BaseMetricLossFunction):
     def __init__(self, alpha=1.0, add_loss_func=None, lamb=1.0, reducer=DoNothingReducer(), use_positive=True, **kwargs):
+        """
+
+        Args:
+            alpha (float, optional): multiplies the redundancy reduction term. Defaults to 1.0.
+            add_loss_func (_type_, optional): _description_. Defaults to None.
+            lamb (float, optional): _description_. Defaults to 1.0.
+            reducer (_type_, optional): reducer. Consider using `MeanReducer`. Defaults to DoNothingReducer().
+            use_positive (bool, optional): _description_. Defaults to True.
+        """
         super().__init__(reducer=reducer, **kwargs)
         self.alpha = alpha
         self.add_loss_func = add_loss_func

@@ -13,6 +13,11 @@ import pickle
 
 
 class TransformsDataset(torch.utils.data.IterableDataset):
+    """
+    Just transforms a Pytorch dataset. 
+    Note that samples are transformed only when they are iterated and there is no caching.
+    """
+
     def __init__(self, D: torch.utils.data.IterableDataset, transforms) -> None:
         super().__init__()
         self.D = D
@@ -37,7 +42,11 @@ class TransformsDataset(torch.utils.data.IterableDataset):
 
 
 class ConcatenateDataset(torch.utils.data.IterableDataset):
-    def __init__(self, datasets: Iterable[PickledDataset], map_labels: List[List]):
+    """
+    Concatenates multiple datasets in order to construct a Pytorch dataset.
+    """
+
+    def __init__(self, datasets: Iterable[PickledDataset], map_labels: List[List] = None):
         super().__init__()
         self.datasets = datasets
 
@@ -89,6 +98,12 @@ class ConcatenateDataset(torch.utils.data.IterableDataset):
         return self.labels
 
     def getDomains(self) -> np.ndarray:
+        """ This class automatically assigns a domain number for each dataset.
+        This method return the domain number for each sample.
+
+        Returns:
+            np.ndarray: a numpy array of the same size as the concatenated datasets.
+        """
         domains = np.empty(len(self), dtype=int)
         k = 0
         for i, d in enumerate(self.datasets):
@@ -104,6 +119,10 @@ class ConcatenateDataset(torch.utils.data.IterableDataset):
 
 
 class AppendDataset(torch.utils.data.IterableDataset):
+    """
+    DEPRECATED
+    """
+
     def __init__(self, D: torch.utils.data.IterableDataset, data_to_append: dict) -> None:
         super().__init__()
         self.D = D
@@ -127,6 +146,7 @@ class AppendDataset(torch.utils.data.IterableDataset):
         return len(self.D)
 
 
+# Common transformers used by most datasets
 COMMON_TRANSFORMERS = [
     NormalizeSampleRate(97656),
     Split(6101*2),
@@ -154,20 +174,26 @@ MFPT_TRANSFORMERS = [
 
 SEU_TRANSFORMERS = [FilterByValue(on_field='channel', values=1)] + COMMON_TRANSFORMERS
 
-# PU_TRANSFORMERS = COMMON_TRANSFORMERS
-PU_TRANSFORMERS = [
-    Sampling(0.67)
-] + COMMON_TRANSFORMERS
+PU_TRANSFORMERS = COMMON_TRANSFORMERS
+# PU_TRANSFORMERS = [
+#     Sampling(0.5) # Useful for testing
+# ] + COMMON_TRANSFORMERS
 
 RPDBCS_TRANSFORMERS = [StandardScaler(on_field='signal', type='all'),
                        SelectFields('signal', ['label', 'index'])]
 
 IMS_TRANSFORMERS = [
-    Sampling(0.2)
+    Sampling(0.2)  # Even with this, it did not work.
 ] + COMMON_TRANSFORMERS
 
 
 def custom_xjtu_filter(data: dict):
+    """
+    Adapts the output of :class:`XJTU_raw`, which outputs a two columns dataframe for each signal,
+     into the standard format, which is a 1-d numpy array for each signal.
+
+    TODO: Move this to the XJTU_raw class
+    """
     metainfo: pd.DataFrame = data['metainfo']
     mask = metainfo['fault'].notna()
     metainfo = metainfo[mask].copy()
