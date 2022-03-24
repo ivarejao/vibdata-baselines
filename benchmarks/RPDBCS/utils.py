@@ -1,3 +1,4 @@
+from collections import defaultdict
 import torch
 import numpy as np
 from sklearn.model_selection import StratifiedGroupKFold
@@ -14,13 +15,22 @@ from pytorch_balanced_sampler.sampler import BalancedDataLoader
 
 
 class DomainValidSplit:
-    def __init__(self, random_state=None) -> None:
+    """
+    This class is used as a callback for splitting dataset into train and valid dataset when using skorch.
+    It splits the training dataset into `cv_size` stratified folds with respect to labels and domains, that is,
+    each fold contains the same proportion found in the whole dataset for domains and labels.
+    """
+
+    def __init__(self, cv_size=10, random_state=None) -> None:
         self.random_state = random_state
+        self.cv_size = cv_size
 
     def __call__(self, dataset, y=None, groups=None):
         domain = np.array([x['domain'] for x, _ in dataset], dtype=int)
         group_ids = np.array([x['index'] for x, _ in dataset], dtype=int)
-        sampler = StratifiedGroupKFold(10, shuffle=True, random_state=self.random_state)
+
+        # We are using StratifiedGroupKFold here, but we will only get the first fold.
+        sampler = StratifiedGroupKFold(self.cv_size, shuffle=True, random_state=self.random_state)
         uniq_domains = np.unique(domain)
         train_idxs = []
         test_idxs = []
@@ -38,11 +48,16 @@ class DomainValidSplit:
 
 
 class EstimatorDomainScoring(EstimatorEpochScoring):
+    """
+    This an adaptation of `EstimatorEpochScoring` for selecting a single domain for using the EstimatorEpochScoring.
+    It just runs the EstimatorEpochScoring for a single specified domain of choice.
+    """
+
     def __init__(self, i, domains, estimator, metric='f1_macro', name='score', lower_is_better=False, use_caching=False, on_train=False, **kwargs):
         """
         Args:
             i (int): the desired domain.
-            domains (array of ints): array of same size as the dataset, telling the domain each sample belongs.
+            domains (array of ints): array of same size as the dataset, telling what domain each sample belongs.
         """
         super().__init__(estimator, metric, name, lower_is_better, use_caching, on_train, **kwargs)
         self.i = i
@@ -64,7 +79,7 @@ class EstimatorDomainScoring(EstimatorEpochScoring):
 
 class metric_domain:
     """
-    Makes any metric to only be used on samples of a certain domain.
+    Makes any metric to be only used on samples of a certain domain.
     """
 
     def __init__(self, i, metric: Callable) -> None:
@@ -80,7 +95,26 @@ class metric_domain:
 
 
 class ExternalDatasetScoringCallback(Callback):
+    """
+    A skoch callback for testing the neural net on an external dataset, at each epoch.
+    """
+
     def __init__(self, X, Y, metrics: List[Tuple], classifier_adapter=lambda net: net, classifier_adapter__kwargs={}) -> None:
+        """
+
+        Args:
+            X (numpy array, pytorch tensor or pytorch dataset): 
+            Y (numpy array, pytorch tensor or None): 
+            metrics (List[Tuple]): a list of tuples of three elements, where the first element is any arbitrary metric name, the second element is the metric (a callable with two parameters)
+                and the third element is a boolean telling if `lower_is_better`. Example: 
+                >>> metrics=[("valid/accuracy", accuracy_cb, False)
+            classifier_adapter: parameter for changing the prediction of the original network. 
+            It is a callback function that receives the `skorch.NeuralNet` and returns a sklearn estimator.
+                Note that `skorch.NeuralNet` is already a sklearn estimator, so the user don't need to use this parameters, 
+                unless the original network prediction needs some adaptation.
+            Defaults to lambdanet:net.
+            classifier_adapter__kwargs: passed to the `classifier_adapter` callback function. Defaults to {}.
+        """
         super().__init__()
         self.X = X
         self.Y = Y
@@ -107,6 +141,16 @@ class ExternalDatasetScoringCallback(Callback):
 
 
 def loadTransformDatasets(data_root_dir, datasets: List[Tuple], cache_dir=None) -> List[PickledDataset]:
+    """Loads and transforms datasets. 
+
+    Args:
+        data_root_dir (str): path to the datasets.
+        datasets (List[Tuple]): List of `RawVibrationDataset`.
+        cache_dir (str, optional): path to a directory, to use as cache for the transformed datasets. Defaults to None.
+
+    Returns:
+        List[PickledDataset]: _description_
+    """
     datasets_transformed = []
     for dname, dataset_raw_cls, params, transforms in tqdm(datasets, desc="Loading and transforming datasets"):
         print(f"Transforming {dname}...")
@@ -119,6 +163,17 @@ def loadTransformDatasets(data_root_dir, datasets: List[Tuple], cache_dir=None) 
 
 
 class SplitLosses(torch.nn.Module):
+    """When the network arch has multiple outputs and/or there are multiple output labels (e.g, domain label and class label),
+    and/or there are multiple losses, this class is useful to split each loss into their respective input/output.
+    Example:
+    >>> loss1 = torch.nn.CrossEntropyLoss()
+    ... loss2 = pytorch_metric_learning.losses.TripletMarginLoss()
+    ... loss_combined = SplitLosses(losses_list=[loss1, loss2], split_x_list=[0,1], lambs=[0.5,1.0])
+    This example combines cross entropy loss and triplet loss by applying cross entropy to the first output (index 0) 
+    and triplet loss to the second output (index 1). Then, the first loss is multiplied by 0.5 while the second is multiplied by 1.0. 
+    Note the the network arch (torch.nn.Module) should output (.forward method) a tuple of two tensors.
+    """
+
     def __init__(self, losses_list: List, lambs: List[float] = None,
                  split_x_list: List = None, split_y_list: List = None):
         super().__init__()
@@ -172,7 +227,19 @@ class SplitLosses(torch.nn.Module):
 
 
 class MacroAvgLoss(torch.nn.Module):
+    """It applies a specified loss twice, one for the positive label and one for the negative label, and then averages it.
+    The negative label is all other labels not designated as positive by the user.
+    Note: the negative labels are passed to the loss in their original form, that is, they are NOT converted to a single integer value.
+    """
+
     def __init__(self, base_loss: torch.nn.Module, positive_label=0, Y_index=None) -> None:
+        """
+        Args:
+            base_loss (torch.nn.Module): Any pytorch loss
+            positive_label (int, optional): The integer defining which label is the positive label. Defaults to 0.
+            Y_index (_type_, optional): If the dataset output multiple columns labels (example: a domain vector and a class label vector), 
+                this parameter indicates which column to consider. None means there is a single column. Defaults to None.
+        """
         super().__init__()
         self.positive_label = positive_label
         self.base_loss = base_loss
@@ -209,18 +276,25 @@ class MacroAvgLoss(torch.nn.Module):
             loss_neg = 0.0
 
         if(isinstance(loss_pos, dict)):
-            return {k: (loss_neg[k]+vpos)/2 for k, vpos in loss_pos.items()}
+            if(isinstance(loss_neg, dict)):
+                return {k: (loss_neg[k]+vpos)/2 for k, vpos in loss_pos.items()}
+            return {k: (loss_neg+vpos)/2 for k, vpos in loss_pos.items()}
+        if(isinstance(loss_neg, dict)):
+            return {k: (loss_pos+vneg)/2 for k, vneg in loss_neg.items()}
         return (loss_neg+loss_pos)/2
 
 
 class DomainBalancedDataLoader(BalancedDataLoader):
+    """
+    A dataloader that balances both labels and domains.
+
+    """
     @staticmethod
     def _get_labels_domain(dataset):
         labels = BalancedDataLoader._get_labels(dataset)
         domains = DomainBalancedDataLoader._get_domain(dataset)
-        return labels
-        # m = labels.max()
-        # return labels + (m+1)*domains
+        m = labels.max()
+        return labels + (m+1)*domains
 
     @staticmethod
     def _get_domain(dataset):
@@ -241,3 +315,4 @@ class DomainBalancedDataLoader(BalancedDataLoader):
         super().__init__(dataset, batch_size, num_workers, collate_fn, pin_memory,
                          worker_init_fn, callback_get_label=DomainBalancedDataLoader._get_labels_domain,
                          circular_list=circular_list, shuffle=shuffle, random_state=random_state, **kwargs)
+

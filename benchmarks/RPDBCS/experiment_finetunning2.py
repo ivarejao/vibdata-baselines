@@ -43,9 +43,8 @@ from pathlib import Path
 from barlow_twins import BarlowTwins
 
 """
-Experiments for domain adaptation using Coral
+Experiments for domain adaptation using Coral and Barlow Twins
 """
-
 
 RANDOM_STATE = 42
 torch.manual_seed(RANDOM_STATE)
@@ -57,19 +56,21 @@ VIBNET_BB_FPATH = '/tmp/vibnet_backbone.pt'
 MODEL_SAVE_DIR = Path('saved_models/multiple_coral_losses/')
 
 
+# Defining the datasets and transformers to use.
+# Tuple: (name, dataset class, params to be passed to __init__, transformers)
 DATASETS = [
-    ('mfpt', MFPT_raw, {}, MFPT_TRANSFORMERS),  # 0
-    ('cwru', CWRU_raw, {}, CWRU_TRANSFORMERS),  # 1
+    ('mfpt', MFPT_raw, {}, MFPT_TRANSFORMERS),
+    ('cwru', CWRU_raw, {}, CWRU_TRANSFORMERS),
     # ('seu', SEU_raw, SEU_TRANSFORMERS),
-    # ('XJTU', XJTU_raw, {}, XJTU_TRANSFORMERS),  # 2
+    ('XJTU', XJTU_raw, {}, XJTU_TRANSFORMERS),
     # ('IMS', IMS_raw, {}, IMS_TRANSFORMERS),
-    ('UOC', UOC_raw, {}, COMMON_TRANSFORMERS),  # 3
-    # ('pu', PU_raw, {}, PU_TRANSFORMERS),  # 4
-    ('rpdbcs', RPDBCS_raw, {'frequency_domain': True}, RPDBCS_TRANSFORMERS),  # 5
+    ('UOC', UOC_raw, {}, COMMON_TRANSFORMERS),
+    ('pu', PU_raw, {}, PU_TRANSFORMERS),
+    ('rpdbcs', RPDBCS_raw, {'frequency_domain': True}, RPDBCS_TRANSFORMERS),
 ]
 
 
-class MetricNet(nn.Module):
+class RPDBCS2020NetLoadable(nn.Module):
     def __init__(self, input_size, encode_size, activation_function=nn.PReLU(), load_bb_weights_fpath=None) -> None:
         super().__init__()
         if(load_bb_weights_fpath is not None):
@@ -84,17 +85,28 @@ class MetricNet(nn.Module):
 
 class MetricNetPerDomain(nn.Module):
     """
-    This arch has a specific head for each domain.
+    This arch has a head for each domain.
     """
 
-    def __init__(self, backbone, n_domains, input_size, encode_size, activation_function=nn.PReLU(), load_bb_weights_fpath=None,
+    def __init__(self, backbone, n_domains, input_size, encode_size, activation_function=nn.PReLU(), load_bb_weights_fpath: str = None,
                  head_encode_size=8, all_outputs=True) -> None:
+        """
+
+        Args:
+            backbone (class of nn.Module): must have `input_size` and `output_size` as parameters of `__init__`
+            n_domains (int): number of distinct domains.
+            input_size (int): backbone input size.
+            encode_size (int): output size of the backbone.
+            activation_function (torch.nn.Module, optional): activation function. Defaults to nn.PReLU().
+            load_bb_weights_fpath (str, optional): path to load the backbone, instead of constructing a new one. Defaults to None.
+            head_encode_size (int, optional): encode_size of each domain head. Defaults to 8.
+            all_outputs (bool, optional): If true, it will output the backbone output alongside with the heads output. Defaults to True.
+        """
         super().__init__()
         if(load_bb_weights_fpath is not None):
             self.backbone = torch.load(load_bb_weights_fpath)
         else:
-            self.backbone = backbone(input_size=input_size, output_size=encode_size,
-                                     activation_function=activation_function)
+            self.backbone = backbone(input_size=input_size, output_size=encode_size)
         self.head_encode_size = head_encode_size
         self.heads_reg = nn.Sequential(activation_function,
                                        nn.Linear(encode_size, head_encode_size*n_domains))
@@ -115,7 +127,7 @@ class MetricNetPerDomain(nn.Module):
         return Xc
 
 
-class NetPerDomain(NeuralNetTransformer):
+class NeuralNetDomainAdapter(NeuralNetTransformer):
     def get_loss(self, y_pred, y_true, X=None, training=False):
         return super().get_loss(y_pred, (X['domain'], y_true), X=X, training=training)
 
@@ -147,6 +159,19 @@ DEFAULT_OPTIM_PARAMS['optimizer'] = AdaBelief
 
 
 def commonCallbacks(to_save_fpath: Union[str, Path] = None) -> List[skorch.callbacks.Callback]:
+    """Builds common callbacks:
+    - The `skorch.callbacks.Checkpoint` callback, which saves the model every epoch in which the valid_loss is improved compared with the best one.
+    - The `skorch_extra.callbacks.LoadEndState` callback, which loads the weights of the best epoch, after training.
+    - The `EarlyStopping` callback, which stops training after 50 epochs of no improvement.
+    - The `LRScheduler` callback, which multiplies the learning rate by 0.1 every 20 epochs.
+    - The `TrainEndCheckpoint` callback, which saves the model in a specified path, if parameter `to_save_fpath` is not None.
+
+    Args:
+        to_save_fpath (Union[str, Path], optional): path to save the model after training. Defaults to None.
+
+    Returns:
+        List[skorch.callbacks.Callback]: a list of callbacks.
+    """
     from tempfile import mkdtemp
 
     if(isinstance(to_save_fpath, str) and to_save_fpath is not None):
@@ -204,6 +229,7 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
 
     global WANDB_RUN, SAVE_COUNT
 
+    ## Network arch parameters ##
     module_params = {
         'n_domains': len(dataset_names),
         'encode_size': encode_size, 'input_size': dataset.getInputSize(),
@@ -212,6 +238,7 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
     }
     module_params = {"module__"+key: v for key, v in module_params.items()}
     module_params['module'] = MetricNetPerDomain
+    #############################
 
     saved_model_fname = 'vibnet_%d.pt' % SAVE_COUNT
     callbacks = commonCallbacks(MODEL_SAVE_DIR/saved_model_fname)
@@ -270,11 +297,6 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
     net_params = DEFAULT_NETPARAMS.copy()
 
     ### Criterion parameters ###
-    # net_params.update({
-    #     'criterion': CoralLoss,
-    #     'criterion__clf_loss': LossPerDomain(TripletMarginLoss(margin=0.5, reducer=MeanReducer(), triplets_per_anchor='all')),
-    #     'criterion__lamb': lamb,
-    # })
     bwloss = SplitLosses(losses_list=[BarlowTwins(lamb=1.0, alpha=1.0, use_positive=False, reducer=MeanReducer())],
                          split_y_list=[0]  # 0: domain. 1: class
                          )
@@ -282,14 +304,14 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
     losses_list = [
         ('bw_loss', MacroAvgLoss(bwloss, Y_index=1)),  # 1: class
         ('clf_loss', LossPerDomain(TripletMarginLoss(margin=0.5, reducer=MeanReducer(), triplets_per_anchor='all'))),
-        ('coralloss1', coralloss)
+        ('coralloss1', MacroAvgLoss(coralloss, Y_index=1))
     ]
     net_params.update({
         'criterion': SplitLosses,
         'criterion__losses_list': losses_list,
         'criterion__split_y_list': [(0, 1), (0, 1), (0, 1)],  # 0: domain. 1: class.
         'criterion__split_x_list': [1, 0, 1],  # 2: convnet output (size=6080). 1: backbone output. 0: heads output
-        'criterion__lambs': [1.0, 1.0, 0.0]  # We can monitor coralloss without optimizing it setting lamb=0.0 for it.
+        'criterion__lambs': [lamb, 1.0, 0.0]  # We can monitor coralloss without optimizing it setting lamb=0.0 for it.
     })
     # net_params.update({
     #     'criterion': TripletMarginLoss,
@@ -310,7 +332,7 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
                              'dropout_on_heads': True})
 
     name = "Tripletloss-Vibnet"
-    clf = NetPerDomain(**net_params, **module_params, **optimizer_params, cache_dir=None)
+    clf = NeuralNetDomainAdapter(**net_params, **module_params, **optimizer_params, cache_dir=None)
 
     with open(MODEL_SAVE_DIR/'metainfo.txt', append_or_write) as f:
         f.write("%s:%s\n%s\n\n%s\n\n%s" % (saved_model_fname,
@@ -333,7 +355,7 @@ def createFineTNet(dataset, encode_size, finetunning_on=True) -> Tuple[str, Neur
         'encode_size': encode_size, 'input_size': 6100  # dataset[0]['signal'].shape[-1],
     }
     module_params = {"module__"+key: v for key, v in module_params.items()}
-    module_params['module'] = MetricNet
+    module_params['module'] = RPDBCS2020NetLoadable
 
     callbacks = [EstimatorEpochScoring(QuadraticDiscriminantAnalysis(), 'f1_macro',
                                        name='QDA_f1_macro', lower_is_better=False, use_caching=False)]
@@ -362,7 +384,7 @@ def createFineTNet(dataset, encode_size, finetunning_on=True) -> Tuple[str, Neur
 
 def _transform_output(data: dict):
     """
-    Renames data
+    Transforms the dict output into a tuple output format that pytorch normally accepts.
     """
     label = data['label']
     del data['label']
@@ -454,21 +476,24 @@ def run_single_experiment(datasets_concat: ConcatenateDataset, datasets_names, D
 
 
 def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
+    # Generates 4 folds, but only tests in the first one.
     sampler = StratifiedGroupKFold(n_splits=4, shuffle=True, random_state=RANDOM_STATE)
-    # sampler = StratifiedShuffleSplit(n_splits=1, test_size=0.25, random_state=RANDOM_STATE)
 
     # Transform datasets
     datasets_transformed = loadTransformDatasets(data_root_dir, DATASETS, cache_dir)
     datasets_names = [name for name, _ in datasets_transformed]
 
-    # All datasets
-    Results = []
+    # In fine-tunning, d_percentage parameter removes a percentage of the training dataset. The test set remains intact.
+    d_percentage_list = [1.0, 0.5, 0.25]  # All parameters of this list will be test
 
-    d_percentage_list = [1.0, 0.5, 0.25]  # [0.1, 0.25, 0.5, 1.0]
+    lambds = [1.0, 0.0, 10.0]  # All lambs to be tested. Multiples the domain adaptation loss by lamb.
 
-    lambds = [0.0]
+    # If True, the vibnet will be trained on source datasets and its weights
+    #  will be used to fine tune a neural network on the target dataset.
+    # If False, vibnet is not trained and the network trained in the target dataset will be initilized normally (random weights).
     finetunning_on_options = [True, False]
 
+    Results = []
     with tqdm(total=len(datasets_transformed) * len(d_percentage_list) * len(finetunning_on_options) * len(lambds)) as pbar:
         for finetunning_on in finetunning_on_options:
             for i, (dname, Dtarget) in enumerate(datasets_transformed):
@@ -485,6 +510,8 @@ def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
                         ### Preparing dataset ###
                         Yc = Dtarget.metainfo['label']
                         group_ids = Dtarget.metainfo['index']
+
+                        # Transforming the dict output into a tuple output that pytorch normally accepts.
                         Dtarget_transf = TransformsDataset(Dtarget, _transform_output)
                         Dtarget_transf.labels = Yc
 
@@ -503,6 +530,7 @@ def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
                         pbar.set_description(dname)
 
                         datasets_names_sources = datasets_names[:i] + datasets_names[i+1:]
+                        # Concatanates all source datasets.
                         datasets_concat = ConcatenateDataset([d for j, (_, d) in enumerate(datasets_transformed) if j != i],
                                                              None)
 

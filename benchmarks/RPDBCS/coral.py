@@ -51,7 +51,7 @@ class CoralLoss(torch.nn.Module):
             Xj = X[domain == dj]
             covloss, mean_loss = coral(Xi, Xj)
             coralloss = covloss + mean_loss
-            losses['coralloss_%d_%d' % (di, dj)] = coralloss
+            # losses['coralloss_%d_%d' % (di, dj)] = coralloss
             avg_coralloss += coralloss
             avg_meanloss += mean_loss
             avg_covloss += covloss
