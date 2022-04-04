@@ -174,10 +174,10 @@ MFPT_TRANSFORMERS = [
 
 SEU_TRANSFORMERS = [FilterByValue(on_field='channel', values=1)] + COMMON_TRANSFORMERS
 
-PU_TRANSFORMERS = COMMON_TRANSFORMERS
-# PU_TRANSFORMERS = [
-#     Sampling(0.5) # Useful for testing
-# ] + COMMON_TRANSFORMERS
+# PU_TRANSFORMERS = COMMON_TRANSFORMERS
+PU_TRANSFORMERS = [
+    Sampling(0.6) # Useful for testing
+] + COMMON_TRANSFORMERS
 
 RPDBCS_TRANSFORMERS = [StandardScaler(on_field='signal', type='all'),
                        SelectFields('signal', ['label', 'index'])]

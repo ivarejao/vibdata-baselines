@@ -71,13 +71,14 @@ DATASETS = [
 
 
 class RPDBCS2020NetLoadable(nn.Module):
-    def __init__(self, input_size, encode_size, activation_function=nn.PReLU(), load_bb_weights_fpath=None) -> None:
+    def __init__(self, input_size, encode_size, activation_function=nn.PReLU(),
+                 load_bb_weights_fpath=None, single_output=True) -> None:
         super().__init__()
         if(load_bb_weights_fpath is not None):
             self.backbone = torch.load(load_bb_weights_fpath)
         else:
             self.backbone = RPDBCS2020Net(input_size=input_size, output_size=encode_size,
-                                          activation_function=activation_function)
+                                          activation_function=activation_function, single_output=single_output)
 
     def forward(self, X, **kwargs):
         return self.backbone(X)
@@ -89,7 +90,7 @@ class MetricNetPerDomain(nn.Module):
     """
 
     def __init__(self, backbone, n_domains, input_size, encode_size, activation_function=nn.PReLU(), load_bb_weights_fpath: str = None,
-                 head_encode_size=8, all_outputs=True) -> None:
+                 head_encode_size=8, all_outputs=True, **kwargs) -> None:
         """
 
         Args:
@@ -106,7 +107,7 @@ class MetricNetPerDomain(nn.Module):
         if(load_bb_weights_fpath is not None):
             self.backbone = torch.load(load_bb_weights_fpath)
         else:
-            self.backbone = backbone(input_size=input_size, output_size=encode_size)
+            self.backbone = backbone(input_size=input_size, output_size=encode_size, **kwargs)
         self.head_encode_size = head_encode_size
         self.heads_reg = nn.Sequential(activation_function,
                                        nn.Linear(encode_size, head_encode_size*n_domains))
@@ -116,6 +117,7 @@ class MetricNetPerDomain(nn.Module):
 
     def forward(self, X, domain, **kwargs):
         X2, X1 = self.backbone(X)
+        # X2 = self.backbone(X)
         if(self.transform_mode):
             return X2
         Xc = self.heads_reg(X2).reshape(-1, self.n_domains, self.head_encode_size)
@@ -143,7 +145,7 @@ DEFAULT_NETPARAMS = {
     'max_epochs': 100,
     'batch_size': 256,
     'train_split': ValidGroupSplit(cv=0.1, stratified=True, random_state=RANDOM_STATE),
-    'iterator_train': DomainBalancedDataLoader,
+    'iterator_train': BalancedDataLoader,
     'iterator_train__num_workers': 4, 'iterator_train__pin_memory': True,
     # 'iterator_train__random_state': RANDOM_STATE,
     'iterator_train__shuffle': True,
@@ -234,7 +236,8 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
         'n_domains': len(dataset_names),
         'encode_size': encode_size, 'input_size': dataset.getInputSize(),
         'all_outputs': True,
-        'backbone': backbone
+        'backbone': backbone,
+        'single_output': False
     }
     module_params = {"module__"+key: v for key, v in module_params.items()}
     module_params['module'] = MetricNetPerDomain
@@ -262,7 +265,7 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
     if(add_data is not None):
         d, dname = add_data
         labels = d.metainfo['label']
-        if(len(labels) > 6000):
+        if(len(labels) > 6000):  # testing on at most 6000 samples, otherwise, the validation will take too much long.
             sampler = StratifiedShuffleSplit(n_splits=1, test_size=6000, random_state=RANDOM_STATE)
             _, test_idxs = next(sampler.split(labels, labels))
             d = Subset(d, test_idxs)
@@ -311,7 +314,8 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
         'criterion__losses_list': losses_list,
         'criterion__split_y_list': [(0, 1), (0, 1), (0, 1)],  # 0: domain. 1: class.
         'criterion__split_x_list': [1, 0, 1],  # 2: convnet output (size=6080). 1: backbone output. 0: heads output
-        'criterion__lambs': [lamb, 1.0, 0.0]  # We can monitor coralloss without optimizing it setting lamb=0.0 for it.
+        # We can monitor coralloss (or any other loss) without optimizing it by setting lamb=0.0.
+        'criterion__lambs': [0.0, 1.0, lamb]
     })
     # net_params.update({
     #     'criterion': TripletMarginLoss,
@@ -320,6 +324,7 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
     ############################
     net_params['callbacks'] = callbacks
     net_params['train_split'] = DomainValidSplit()
+    net_params['iterator_train'] = DomainBalancedDataLoader
     # net_params['train_split'] = ValidSplit(cv=0.1, stratified=True, random_state=RANDOM_STATE)
 
     optimizer_params = DEFAULT_OPTIM_PARAMS.copy()
@@ -344,6 +349,7 @@ def createVibnet(dataset: ConcatenateDataset, dataset_names: Iterable[str],
 
     return (name, clf)
 
+
 def createFineTNet(dataset, encode_size, finetunning_on=True) -> Tuple[str, NeuralNetBase]:
     global WANDB_RUN
     # num_classes = len(np.unique(dataset.metainfo['label']))
@@ -351,7 +357,8 @@ def createFineTNet(dataset, encode_size, finetunning_on=True) -> Tuple[str, Neur
     module_params = {
         # 'n_classes': num_classes,
         'load_bb_weights_fpath': VIBNET_BB_FPATH if finetunning_on else None,
-        'encode_size': encode_size, 'input_size': 6100  # dataset[0]['signal'].shape[-1],
+        'encode_size': encode_size, 'input_size': 6100,  # dataset[0]['signal'].shape[-1],
+        'single_output': False
     }
     module_params = {"module__"+key: v for key, v in module_params.items()}
     module_params['module'] = RPDBCS2020NetLoadable
@@ -362,10 +369,11 @@ def createFineTNet(dataset, encode_size, finetunning_on=True) -> Tuple[str, Neur
     callbacks.append(WandbLoggerExtended(WANDB_RUN))
 
     net_params = DEFAULT_NETPARAMS.copy()
+    net_params['callbacks'] = callbacks
     net_params.update({
-        'callbacks': callbacks,
-        'criterion': TripletMarginLoss,
-        'criterion__margin': 0.5, 'criterion__triplets_per_anchor': 'all', 'criterion__reducer': MeanReducer()
+        'criterion': SplitLosses,
+        'criterion__losses_list': [TripletMarginLoss(margin=0.5, triplets_per_anchor='all', reducer=MeanReducer())],
+        'criterion__split_x_list': [0]
     })
     if(WANDB_RUN is not None):
         WANDB_RUN.config.update({"net_param__%s" % k: v for k, v in net_params.items()})
@@ -483,7 +491,7 @@ def run_experiment(data_root_dir, cache_dir="/tmp/sigdata_cache"):
     datasets_names = [name for name, _ in datasets_transformed]
 
     # In fine-tunning, d_percentage parameter removes a percentage of the training dataset. The test set remains intact.
-    d_percentage_list = [1.0, 0.5, 0.25]  # All parameters of this list will be test
+    d_percentage_list = [1.0, 0.5, 0.25]  # All parameters of this list will be tested
 
     lambds = [1.0, 0.0, 10.0]  # All lambs to be tested. Multiples the domain adaptation loss by lamb.
 

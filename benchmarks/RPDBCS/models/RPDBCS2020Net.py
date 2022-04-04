@@ -8,7 +8,8 @@ class RPDBCS2020Net(nn.Module):
     Network architecture used in https://doi.org/10.1109/IJCNN48605.2020.9207133
     """
 
-    def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU(), random_state=None):
+    def __init__(self, input_size=6100, output_size=8, activation_function=nn.PReLU(), single_output=True,
+                 random_state=None):
         if(random_state is not None):
             torch.manual_seed(random_state)
             torch.cuda.manual_seed(random_state)
@@ -29,6 +30,8 @@ class RPDBCS2020Net(nn.Module):
                                 nn.Linear(192, output_size)
                                 )
 
+        self.single_output = single_output
+
         # print('>>>Number of parameters: ',sum(p.numel() for p in self.parameters()))
 
     def forward(self, x):
@@ -36,6 +39,8 @@ class RPDBCS2020Net(nn.Module):
             x = x.reshape(x.shape[0], 1, x.shape[1])
         output1 = self.convnet(x)
         output2 = self.fc(output1)
+        if(self.single_output):
+            return output2
         # NOTE: By default, skorch uses the first element of the tuple as the default output of net.predict() and net.predict_proba().
         return output2, output1
 
