@@ -121,7 +121,6 @@ class MetricNetPerDomain(nn.Module):
         if(self.transform_mode):
             return X2
         Xc = self.heads_reg(X2).reshape(-1, self.n_domains, self.head_encode_size)
-        Xc = Xc[:, domain]
         Xc = Xc[torch.arange(len(Xc)), domain]
 
         if(self.all_outputs):
