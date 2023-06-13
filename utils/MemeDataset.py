@@ -3,8 +3,9 @@ import pandas as pd
 
 class MemeDataset(Dataset):
     
-    def __init__(self, src_dataset):
+    def __init__(self, src_dataset, standardize=False):
         self.dataset = src_dataset
+        self.standardize = standardize
     
     def __len__(self):
         return len(self.dataset)
@@ -16,4 +17,7 @@ class MemeDataset(Dataset):
             y = ret['metainfo']['label']
         else:
             y = ret['metainfo']['label'].values.reshape(-1, 1)
+        
+        if self.standardize:
+            y -= self.dataset.metainfo['label'].min()
         return X, y
