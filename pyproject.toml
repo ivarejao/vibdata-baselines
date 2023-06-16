@@ -1,0 +1,21 @@
+[tool.isort]
+# Add custom sections
+#known_pandas=pandas,numpy
+#known_ai=sklearn,torch
+#sections=FUTURE,STDLIB,THIRDPARTY,PANDAS,AI,FIRSTPARTY,LOCALFOLDER
+# Add heading to importants sections
+#import_heading_ai="Artificial Intelligence"
+#import_heading_pandas="Pandas"
+#import_heading_firstparty="Custom libs"
+# Sort by the lenght
+length_sort=true
+profile="black"
+multi_line_output=5
+line_length=120
+use_parentheses=true
+
+[tool.black]
+line-length=120
+target-version=['py310']
+#include='*.py'
+# Remember that black already picks the .gitingore files and ignore them
