@@ -1,18 +1,16 @@
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 
-
 # -----------------------input size>=111---------------------------------
-__all__ = ['AlexNet', 'alexnet']
+__all__ = ["AlexNet", "alexnet"]
 
 
 model_urls = {
-    'alexnet': 'https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth',
+    "alexnet": "https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth",
 }
 
 
 class AlexNet(nn.Module):
-
     def __init__(self, in_channel=1, out_channel=10):
         super(AlexNet, self).__init__()
         self.features = nn.Sequential(
@@ -47,7 +45,7 @@ class AlexNet(nn.Module):
         x = x.view(x.size(0), 256 * 6)
         x = self.classifier(x)
         return x
-    
+
     def __str__(self):
         return "alexnet-1d"
 
@@ -60,5 +58,5 @@ def alexnet(pretrained=False, **kwargs):
     """
     model = AlexNet(**kwargs)
     if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['alexnet']))
+        model.load_state_dict(model_zoo.load_url(model_urls["alexnet"]))
     return model
