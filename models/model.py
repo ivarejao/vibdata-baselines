@@ -1,18 +1,18 @@
 import torch
 from xgboost import XGBClassifier
 
-from .Resnet1d import resnet50
+from .Resnet1d import resnet18
 from .Alexnet1d import alexnet
 
 models = {
-    "alexnet": alexnet,
-    "resnet": resnet50,
-    "xgb": XGBClassifier,
+    "Alexnet": alexnet,
+    "Resnet50": resnet18,
+    "XGBClassifier": XGBClassifier,
 }
 
 
 class Model:
-    def __init__(self, model_name: str = "alexnet", **kwargs):
+    def __init__(self, model_name: str = "Alexnet", **kwargs):
         self.model_name = model_name
         self.key_values = kwargs
 

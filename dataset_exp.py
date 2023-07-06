@@ -1,15 +1,16 @@
 import os
-from typing import Tuple
+from typing import Dict, Tuple
 from pathlib import Path
 from argparse import Namespace, ArgumentParser
 
+import yaml
 import numpy as np
 import torch
 import pandas as pd
 import torch.optim as optim
 import vibdata.raw as raw
 from torch import nn
-from sklearn.metrics import classification_report
+from sklearn.metrics import f1_score, accuracy_score, classification_report
 from torch.utils.data import DataLoader, SubsetRandomSampler, random_split
 from sklearn.model_selection import KFold
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
@@ -17,11 +18,12 @@ from vibdata.deep.signal.transforms import Sequential, SplitSampleRate, Normaliz
 
 import wandb
 from models.model import Model
+from utils.report import ReportDict
 from utils.MemeDataset import MemeDataset
 
-BATCH_SIZE = 32
-LEARNING_RATE = 0.01
-NUM_EPOCHS = 50
+BATCH_SIZE = 16
+LEARNING_RATE = 0.1
+NUM_EPOCHS = 120
 OUTPUT_ROOT = Path("./output")
 
 
@@ -53,13 +55,20 @@ def main():
     make_deterministic()
     dataset = load_dataset()
 
+    # Load the models
+    with open("cfgs/models.yaml", "r") as f:
+        models_cfgs = yaml.safe_load(f)
+
     # Create net
-    model = Model(model_name=args.model, pretrained=args.pretrained, out_channel=4)
-    experiment(model, MemeDataset(dataset), args.run)
+    models = {m["name"]: Model(m["name"], **m["parameters"]) for m in models_cfgs["models"]}
+    # model = Model(model_name=args.model, pretrained=args.pretrained, out_channel=4)
+    experiment(models, MemeDataset(dataset), args.run)
     wandb.finish()
 
 
 def configure_wandb(run_name: str) -> None:
+    # Retrieve global variables
+    global LEARNING_RATE, NUM_EPOCHS
     wandb.login(key="e510b088c4a273c87de176015dc0b9f0bc30934e")
     wandb.init(
         # Set the project where this run will be logged
@@ -78,20 +87,18 @@ def make_deterministic():
         torch.cuda.manual_seed_all(SEED)
 
 
-def experiment(model: Model, dataset: torch.utils.data.Dataset, run_name: str) -> nn.Module:
+def experiment(param_grid: Dict[str, Model], dataset: torch.utils.data.Dataset, run_name: str) -> nn.Module:
     # Retrive hyperparameters
-    global BATCH_SIZE, LEARNING_RATE
+    global BATCH_SIZE, LEARNING_RATE, NUM_EPOCHS
     print("Beginning training")
     # Create the directory where logs will be stored
     output_dir = OUTPUT_ROOT / run_name
     os.makedirs(output_dir, exist_ok=True)
 
-    param_grid = {"learning_rate": [1e-1, 1e-3, 3e-4]}
-    report_predicitons = {"real_label": [], "predicted": [], "fold": []}
+    report_predicitons = ReportDict(["real_label", "predicted", "fold", "dataset"])
 
     criterion = nn.CrossEntropyLoss()
 
-    # TODO: Change shuffle to True
     kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 
     for fold, (remaining_ids, test_ids) in enumerate(kfold.split(dataset)):
@@ -101,22 +108,22 @@ def experiment(model: Model, dataset: torch.utils.data.Dataset, run_name: str) -
         test_sampler = SubsetRandomSampler(test_ids)
         test_loader = DataLoader(dataset, sampler=test_sampler, batch_size=BATCH_SIZE)
 
+        # Create validation and train sets
         val_generator = torch.Generator().manual_seed(42)  # Generator used to fix the random sample
-        # Create subset
         train_ids, val_ids = random_split(remaining_ids, [0.7, 0.3], generator=val_generator)
         train_sampler = SubsetRandomSampler(train_ids)
         train_loader = DataLoader(dataset, sampler=train_sampler, batch_size=BATCH_SIZE)
 
         results = {
-            "learning_rate": [],
+            "model_name": [],
             "accuracy": [],
+            "f1_score": [],
         }  # Variable that will store the results for each param
-        for lr in param_grid["learning_rate"]:
-            net = model.new()
+        for model_name in param_grid:
+            net = param_grid[model_name].new()
             # Update the optimizer with the learning rate candidate
-            LEARNING_RATE = lr
-            optimizer = optim.SGD(net.parameters(), lr=LEARNING_RATE, momentum=0.9)
-            print(f"Fold: {fold}\n" f"Learning rate: {lr}\n", "---")
+            optimizer = optim.SGD(net.parameters(), lr=LEARNING_RATE, momentum=0.5)
+            print(f"Fold: {fold}\n" f"Model: {model_name}\n", "---")
 
             # Train
             for epoch in range(NUM_EPOCHS):
@@ -146,27 +153,44 @@ def experiment(model: Model, dataset: torch.utils.data.Dataset, run_name: str) -
 
                 train_acc = (train_acc / i) * 100
                 epoch_loss = train_loss / i
-                wandb.log({f"{fold}_{lr}_loss": epoch_loss, f"{fold}_{lr}_accuracy": train_acc})
+                wandb.log({f"{fold}_{model_name}_loss": epoch_loss, f"{fold}_{model_name}_accuracy": train_acc})
                 print(f"[{epoch + 1 : 3d}] loss: {epoch_loss:.3f} | acc: {train_acc:.3f}")
             # Validate the model
             val_sampler = SubsetRandomSampler(val_ids)
             val_loader = DataLoader(dataset, sampler=val_sampler, batch_size=BATCH_SIZE)
 
             print("Validation".center(30, "="))
-            val_loss, val_acc, _ = evaluate(net, val_loader)
-            results["learning_rate"].append(lr)
-            results["accuracy"].append(val_acc)
+            val_loss, val_predictions = evaluate(net, val_loader)
+            val_size = len(val_predictions["real_label"])
+            report_predicitons.update(
+                val_predictions,
+                fold=[
+                    fold,
+                ]
+                * val_size,
+                dataset=[
+                    "validation",
+                ]
+                * val_size,
+            )
+            # Measure validation performance
+
+            results["model_name"].append(model_name)
+            results["accuracy"].append(accuracy_score(val_predictions["real_label"], val_predictions["predicted"]))
+            results["f1_score"].append(
+                f1_score(val_predictions["real_label"], val_predictions["predicted"], average="macro")
+            )
 
         # Evaluate with the testset
-        net = model.new()
         # Define the trainset, now with the validatioset
         train_sampler = SubsetRandomSampler(remaining_ids)
         train_loader = DataLoader(dataset, sampler=train_sampler, batch_size=BATCH_SIZE)
         # Get the best param
         best_param_index = results["accuracy"].index(max(results["accuracy"]))
-        lr = results["learning_rate"][best_param_index]
-        LEARNING_RATE = lr
-        optimizer = optim.SGD(net.parameters(), lr=LEARNING_RATE, momentum=0.9)
+        model_name = results["model_name"][best_param_index]
+        net = param_grid[model_name].new()
+
+        optimizer = optim.SGD(net.parameters(), lr=LEARNING_RATE, momentum=0.5)
         # Train with the model with it
         for epoch in range(NUM_EPOCHS):
             for i, (inputs, labels) in enumerate(train_loader, 0):
@@ -181,17 +205,19 @@ def experiment(model: Model, dataset: torch.utils.data.Dataset, run_name: str) -
                 optimizer.step()
 
         print("Testing".center(30, "="))
-        print(f"Best Param: {lr}")
-        _, test_acc, test_predicitons = evaluate(net, test_loader)
-
-        # Update the preds variable
-        for key in test_predicitons:
-            report_predicitons[key].extend(test_predicitons[key])
-        report_predicitons["fold"].extend(
-            [
+        print(f"Best Param: {model_name}")
+        _, test_predicitons = evaluate(net, test_loader)
+        test_size = len(test_predicitons["real_label"])
+        report_predicitons.update(
+            test_predicitons,
+            fold=[
                 fold,
             ]
-            * len(test_predicitons["real_label"])
+            * test_size,
+            dataset=[
+                "test",
+            ]
+            * test_size,
         )
 
     # Save the predicitons
@@ -207,11 +233,8 @@ def experiment(model: Model, dataset: torch.utils.data.Dataset, run_name: str) -
     return net
 
 
-def evaluate(model: nn.Module, evalloader: DataLoader) -> Tuple[float, float, dict]:
-    # print("Testing")
+def evaluate(model: nn.Module, evalloader: DataLoader) -> Tuple[float, dict]:
     test_loss = 0.0
-    correct, total = 0, 0
-
     criterion = nn.CrossEntropyLoss()
 
     macro_output = []
@@ -233,16 +256,11 @@ def evaluate(model: nn.Module, evalloader: DataLoader) -> Tuple[float, float, di
         output = torch.argmax(output, dim=1)
         # Return to the normalized labels
         output += LABELS.min()
-        for o, l in zip(output, labels):
-            if o == l:
-                correct += 1
-            total += 1
 
         macro_output.append(output.cpu().numpy())
         macro_label.append(labels.cpu().numpy())
 
     test_loss = test_loss / len(evalloader)
-    test_acc = correct / total * 100
 
     # Creates table from classification report and log it
     data = {"predicted": np.concatenate(macro_output), "real_label": np.concatenate(macro_label)}
@@ -253,7 +271,7 @@ def evaluate(model: nn.Module, evalloader: DataLoader) -> Tuple[float, float, di
         zero_division=0,
     )
     print(class_report)
-    return (test_loss, test_acc, data)
+    return test_loss, data
 
 
 def load_dataset() -> DeepDataset:

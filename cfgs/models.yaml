@@ -1,0 +1,14 @@
+models:
+  - name: Alexnet
+    parameters:
+      #random_state: 0
+      out_channel: 4
+      #- name: XGBClassifier
+      #- random_state: 0
+      #- n_estimators: 2
+      #- max_depth: 2
+      #- learning_rate: 0.1
+  - name: Resnet50
+    parameters:
+      #random_state: 0
+      out_channel: 4
