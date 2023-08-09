@@ -19,3 +19,7 @@ line-length=120
 target-version=['py310']
 #include='*.py'
 # Remember that black already picks the .gitingore files and ignore them
+
+[tool.poetry.dependencies]
+python = ">=3.10, <3.11"
+wandb = ">=0.15.2"
