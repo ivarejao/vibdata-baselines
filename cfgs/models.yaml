@@ -8,7 +8,7 @@ models:
       #- n_estimators: 2
       #- max_depth: 2
       #- learning_rate: 0.1
-  - name: Resnet50
+  - name: Resnet18
     parameters:
       #random_state: 0
       out_channel: 4
