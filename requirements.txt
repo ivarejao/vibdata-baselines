@@ -82,9 +82,9 @@ tornado==6.3.1
 tqdm==4.65.0
 traitlets==5.9.0
 typing_extensions==4.7.1
-urllib3==2.0.3
+#urllib3==2.0.3
 vibdata @ git+https://gitlab.com/ninfa-ufes/deep-rpdbcs/signal-datasets.git@5038e95f48b6152d3566004a2cd73fa3c649e72e
 virtualenv==20.23.0
 wandb==0.15.2
-wcwidth==0.2.6
+#wcwidth==0.2.6
 xgboost==1.7.6

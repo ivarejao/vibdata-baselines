@@ -1,4 +1,5 @@
 import os
+import sys
 from typing import Dict, List, Tuple
 from pathlib import Path
 from argparse import Namespace, ArgumentParser
@@ -10,19 +11,20 @@ import pandas as pd
 import torch.optim as optim
 import vibdata.raw as raw
 from torch import nn
+from torchsampler import ImbalancedDatasetSampler
 from sklearn.metrics import classification_report, balanced_accuracy_score
-from torch.utils.data import DataLoader, SubsetRandomSampler
+from torch.utils.data import Subset, DataLoader, SubsetRandomSampler, WeightedRandomSampler
 from sklearn.model_selection import LeaveOneGroupOut
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
-from vibdata.deep.signal.transforms import Sequential, SplitSampleRate, NormalizeSampleRate
+from vibdata.deep.signal.transforms import Sequential, StandardScaler, SplitSampleRate, NormalizeSampleRate
 
 import wandb
 from models.model import Model
 from utils.report import ReportDict
 from utils.MemeDataset import MemeDataset
 
-BATCH_SIZE = 16
-LEARNING_RATE = 0.1
+BATCH_SIZE = 32
+LEARNING_RATE = 1e-1
 NUM_EPOCHS = 120
 OUTPUT_ROOT = Path("./output")
 
@@ -120,20 +122,53 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
 
     dataset = MemeDataset(original_dataset)
 
+    folds = [fold_ids for _, fold_ids in logo.split(dataset, groups=groups)]
+    num_folds = len(folds)
     # ---
     # Cross validation
     # ---
-    for fold_id, (train_ids, test_ids) in enumerate(logo.split(dataset, groups=groups)):
+    for test_fold, test_ids in enumerate(folds):
         print("".center(30, "="))
-        print(f"Fold {fold_id}".center(30, "="))
+        print(f"Fold {test_fold}".center(30, "="))
         print("".center(30, "="))
 
-        # Create test and train dataloader
-        test_sampler = SubsetRandomSampler(test_ids)
-        test_loader = DataLoader(dataset, sampler=test_sampler, batch_size=BATCH_SIZE)
+        get_labels = lambda dataset : [y for (x, y) in dataset]  # noqa E731
+        weights = [
+            0.09204470742932282,
+            0.30046022353714663,
+            0.3037475345167653,
+            0.3037475345167653
+        ]
 
-        train_sampler = SubsetRandomSampler(train_ids)
-        train_loader = DataLoader(dataset, sampler=train_sampler, batch_size=BATCH_SIZE)
+        # Create dataloaders
+        testset = Subset(dataset, test_ids)
+        test_weights = np.array([weights[t] for t in get_labels(testset)])
+        test_weights = torch.from_numpy(test_weights)
+        # test_sampler = ImbalancedDatasetSampler(testset, callback_get_label=get_labels)
+        test_sampler = WeightedRandomSampler(weights=test_weights, num_samples=len(test_weights), replacement=False)
+        test_loader = DataLoader(testset, sampler=test_sampler, batch_size=BATCH_SIZE, num_workers=1)
+
+        val_fold = (test_fold + 1) % num_folds
+        val_ids = folds[val_fold]
+        valset = Subset(dataset, val_ids)
+
+        # torch.nn.functional.one_hot(labels).sum(dim=0)
+
+        val_weights = np.array([weights[t] for t in get_labels(valset)])
+        val_weights = torch.from_numpy(val_weights)
+        val_sampler = WeightedRandomSampler(weights=val_weights, num_samples=len(val_weights), replacement=False)
+        # val_sampler = ImbalancedDatasetSampler(valset, callback_get_label=get_labels)
+        val_loader = DataLoader(valset,  batch_size=BATCH_SIZE, sampler=val_sampler, num_workers=1)
+
+        train_folds = set(range(num_folds)).difference(set([test_fold, val_fold]))
+        train_ids = np.concatenate([folds[i] for i in train_folds])
+        trainset = Subset(dataset, train_ids)
+
+        train_weights = np.array([weights[t] for t in get_labels(trainset)])
+        train_weights = torch.from_numpy(train_weights)
+        train_sampler = WeightedRandomSampler(weights=train_weights, num_samples=len(train_weights), replacement=False)
+        # train_sampler = ImbalancedDatasetSampler(trainset, callback_get_label=get_labels)
+        train_loader = DataLoader(trainset, batch_size=BATCH_SIZE, sampler=train_sampler, num_workers=1)
 
         # Instantiate the model
         net = Model("Resnet18", out_channel=4).new()
@@ -142,15 +177,21 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
         # TODO: Implement an initializer weights method
         # Create the optimizer with the learning rate candidate
         optimizer = optim.Adam(net.parameters(), lr=LEARNING_RATE)
+
+        # Create the net to be saved
+        best_val_loss = sys.maxsize
+        model_path = output_dir / f"model-fold-{test_fold}.pth"
         # ---
         # Train model
         # ---
         print("Training".center(30, "="))
         for epoch in range(NUM_EPOCHS):
+            # Train the net
             train_loss = 0.0
             for i, (inputs, labels) in enumerate(train_loader, 0):
                 inputs = inputs.float().cuda()
                 labels = labels.cuda()
+                # breakpoint()
 
                 # inputs, labels = data['signal'], data['metainfo']['label'].values.reshape(-1, 1)
                 # Zero the graidients
@@ -178,21 +219,37 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
                 train_loss += loss  # * inputs.size(0)
                 # train_acc += torch.sum(torch.eq(labels, outputs)) / len(labels)
 
-            epoch_loss = train_loss / (i + 1)
+            # Validate
+            train_loss = train_loss / (i + 1)
+            val_loss, _ = evaluate(net, val_loader)
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(net.state_dict(), model_path)
+
             wandb.log(
                 {
-                    f"{fold_id}_loss": epoch_loss,
+                    f"{test_fold}_train_loss": train_loss,
+                    f"{test_fold}_val_loss": val_loss,
                 }
             )
-            print(f"[{epoch + 1 : 3d}] loss: {epoch_loss:.3f}")
+            print(f"[{epoch + 1 : 3d}] train_loss: {train_loss:5.3f} | val_loss: {val_loss:5.3f}")
 
+        # ---
+        # Test model
+        # ---
         print("Testing".center(30, "="))
-        _, test_predicitons = evaluate(net, test_loader)
+        # Retrieve the best model
+        net = Model("Resnet18", out_channel=4).new()
+        net.load_state_dict(torch.load(model_path))
+
+        # Evaluate with the testset
+        _, test_predicitons = evaluate(net, test_loader, report=True)
         test_size = len(test_ids)
         report_predicitons.update(
             test_predicitons,
             fold=[
-                fold_id,
+                test_fold,
             ]
             * test_size,
             dataset=[
@@ -200,10 +257,6 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
             ]
             * test_size,
         )
-
-        # Save the model
-        model_path = output_dir / f"model-fold-{fold_id}.pth"
-        torch.save(net.state_dict(), model_path)
 
     # Save the predicitons
     fpath = output_dir / "predictions.csv"
@@ -218,55 +271,62 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
     return net
 
 
-def evaluate(model: nn.Module, evalloader: DataLoader) -> Tuple[float, dict]:
-    test_loss = 0.0
+def evaluate(model: nn.Module, evalloader: DataLoader, report=False) -> Tuple[float, dict]:
+    eval_loss = 0.0
     criterion = nn.CrossEntropyLoss()
 
     macro_output = []
     macro_label = []
 
-    for data, labels in evalloader:
-        # Normalize labels
-        labels -= torch.min(labels)
-        # Move to gpu
-        if torch.cuda.is_available():
-            data = data.float().cuda()
-            labels = labels.cuda()
+    # Disable autograd
+    with torch.no_grad():
+        for batch_id, (data, labels) in enumerate(evalloader):
+            # Normalize labels
+            labels -= torch.min(labels)
+            # Move to gpu
+            if torch.cuda.is_available():
+                data = data.float().cuda()
+                labels = labels.cuda()
 
-        output = model(data)
-        loss = criterion(output, labels)
-        test_loss += loss.item() * data.size(0)
+            output = model(data)
+            loss = criterion(output, labels)
+            eval_loss += loss.item()
 
-        # Convert from one-hot to indexing
-        output = torch.argmax(output, dim=1)
-        # Return to the normalized labels
-        output += LABELS.min()
+            # Convert from one-hot to indexing
+            output = torch.argmax(output, dim=1)
+            # Return to the normalized labels
+            output += LABELS.min()
 
-        macro_output.append(output.cpu().numpy())
-        macro_label.append(labels.cpu().numpy())
+            macro_output.append(output.cpu().numpy())
+            macro_label.append(labels.cpu().numpy())
 
-    test_loss = test_loss / len(evalloader)
+    eval_loss = eval_loss / (batch_id + 1)
 
-    # Creates table from classification report and log it
-    data = {"predicted": np.concatenate(macro_output), "real_label": np.concatenate(macro_label)}
-    class_report = classification_report(
-        data["real_label"],
-        data["predicted"],
-        target_names=LABELS_NAME,
-        zero_division=0,
-    )
-    print(class_report)
-    print("\nBalanced Accuracy: {:3f}%".format(balanced_accuracy_score(data["real_label"], data["predicted"])))
-    return test_loss, data
+    if report:
+        # Creates table from classification report and log it
+        data = {"predicted": np.concatenate(macro_output), "real_label": np.concatenate(macro_label)}
+        class_report = classification_report(
+            data["real_label"],
+            data["predicted"],
+            target_names=LABELS_NAME,
+            zero_division=0,
+        )
+        print(class_report)
+        print("\nBalanced Accuracy: {:3f}%".format(balanced_accuracy_score(data["real_label"], data["predicted"])))
+        return eval_loss, data
+    else:
+        return eval_loss, np.NAN
 
 
 def load_dataset() -> DeepDataset:
     MAX_SAMPLE_RATE = 97656
 
-    transforms = Sequential([SplitSampleRate(), NormalizeSampleRate(MAX_SAMPLE_RATE)])
+    transforms = Sequential(
+        [SplitSampleRate(), NormalizeSampleRate(MAX_SAMPLE_RATE), StandardScaler(on_field="signal")]
+    )
 
-    dataset_name = "CWRU"
-    raw_dir = Path("../datasets")
+    dataset_name = "CWRU_std_scaler"
+    raw_dir = Path("data/raw_datasets")
     deep_dir = Path("data/deep_datasets")
 
     # Load the raw_dataset
