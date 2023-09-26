@@ -1,5 +1,6 @@
 import os
 import sys
+import random
 from typing import Dict, List, Tuple
 from pathlib import Path
 from argparse import Namespace, ArgumentParser
@@ -21,6 +22,7 @@ from vibdata.deep.signal.transforms import Sequential, StandardScaler, SplitSamp
 import wandb
 from models.model import Model
 from utils.report import ReportDict
+from utils.dataloaders import BalancedBatchSampler, seed_worker
 from utils.MemeDataset import MemeDataset
 
 BATCH_SIZE = 32
@@ -85,13 +87,18 @@ def main():
 
 def configure_wandb(run_name: str) -> None:
     # Retrieve global variables
-    global LEARNING_RATE, NUM_EPOCHS
+    global LEARNING_RATE, NUM_EPOCHS, BATCH_SIZE
     wandb.login(key="e510b088c4a273c87de176015dc0b9f0bc30934e")
     wandb.init(
         # Set the project where this run will be logged
         project="vibdata-deeplearning-timedomain",
         # Track hyperparameters and run metadata
-        config={"learning_rate": LEARNING_RATE, "epochs": NUM_EPOCHS, "arquitecture": "alexnet-1d"},
+        config={
+            "batch_size": BATCH_SIZE,
+            "learning_rate": LEARNING_RATE,
+            "epochs": NUM_EPOCHS,
+            "arquitecture": "resnet-18",
+        },
         # Set the name of the experiment
         name=run_name,
     )
@@ -99,9 +106,14 @@ def configure_wandb(run_name: str) -> None:
 
 def make_deterministic():
     SEED = 42
+    # Fix torch
     torch.manual_seed(SEED)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(SEED)
+    # Fix numpy
+    np.random.seed(SEED)
+    # Python
+    random.seed(SEED)
 
 
 def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.Dataset, run_name: str) -> nn.Module:
@@ -132,43 +144,46 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
         print(f"Fold {test_fold}".center(30, "="))
         print("".center(30, "="))
 
-        get_labels = lambda dataset : [y for (x, y) in dataset]  # noqa E731
-        weights = [
-            0.09204470742932282,
-            0.30046022353714663,
-            0.3037475345167653,
-            0.3037475345167653
-        ]
+        get_labels = lambda dataset: [y for (x, y) in dataset]  # noqa E731
 
-        # Create dataloaders
+        #
+        # Divide the dataset into train, validation and test sets
+        #
+        # Generator in order to fix the ramdoness
+        SEED = 42
+        g = torch.Generator()
+        g.manual_seed(SEED)
+
+        # Testing set
+        # ---
         testset = Subset(dataset, test_ids)
-        test_weights = np.array([weights[t] for t in get_labels(testset)])
-        test_weights = torch.from_numpy(test_weights)
-        # test_sampler = ImbalancedDatasetSampler(testset, callback_get_label=get_labels)
-        test_sampler = WeightedRandomSampler(weights=test_weights, num_samples=len(test_weights), replacement=False)
-        test_loader = DataLoader(testset, sampler=test_sampler, batch_size=BATCH_SIZE, num_workers=1)
+        test_sampler = BalancedBatchSampler(
+            labels=get_labels(testset), n_classes=len(LABELS), n_samples=int(BATCH_SIZE / len(LABELS))
+        )
+        test_loader = DataLoader(testset, batch_sampler=test_sampler, worker_init_fn=seed_worker, generator=g)
 
+        # Validation
+        # ---
         val_fold = (test_fold + 1) % num_folds
         val_ids = folds[val_fold]
-        valset = Subset(dataset, val_ids)
-
         # torch.nn.functional.one_hot(labels).sum(dim=0)
+        valset = Subset(dataset, val_ids)
+        val_sampler = BalancedBatchSampler(
+            labels=get_labels(valset), n_classes=len(LABELS), n_samples=int((BATCH_SIZE / len(LABELS)))
+        )
+        val_loader = DataLoader(valset, batch_sampler=val_sampler, worker_init_fn=seed_worker, generator=g)
+        # val_loader = DataLoader(valset, batch_size=BATCH_SIZE, num_workers=1, shuffle=True)
 
-        val_weights = np.array([weights[t] for t in get_labels(valset)])
-        val_weights = torch.from_numpy(val_weights)
-        val_sampler = WeightedRandomSampler(weights=val_weights, num_samples=len(val_weights), replacement=False)
-        # val_sampler = ImbalancedDatasetSampler(valset, callback_get_label=get_labels)
-        val_loader = DataLoader(valset,  batch_size=BATCH_SIZE, sampler=val_sampler, num_workers=1)
-
+        # Training set
+        # ---
         train_folds = set(range(num_folds)).difference(set([test_fold, val_fold]))
         train_ids = np.concatenate([folds[i] for i in train_folds])
         trainset = Subset(dataset, train_ids)
-
-        train_weights = np.array([weights[t] for t in get_labels(trainset)])
-        train_weights = torch.from_numpy(train_weights)
-        train_sampler = WeightedRandomSampler(weights=train_weights, num_samples=len(train_weights), replacement=False)
-        # train_sampler = ImbalancedDatasetSampler(trainset, callback_get_label=get_labels)
-        train_loader = DataLoader(trainset, batch_size=BATCH_SIZE, sampler=train_sampler, num_workers=1)
+        train_sampler = BalancedBatchSampler(
+            labels=get_labels(trainset), n_classes=len(LABELS), n_samples=int(BATCH_SIZE / len(LABELS))
+        )
+        train_loader = DataLoader(trainset, batch_sampler=train_sampler, worker_init_fn=seed_worker, generator=g)
+        # train_loader = DataLoader(trainset, batch_size=BATCH_SIZE, num_workers=1, shuffle=True)
 
         # Instantiate the model
         net = Model("Resnet18", out_channel=4).new()
@@ -191,9 +206,7 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
             for i, (inputs, labels) in enumerate(train_loader, 0):
                 inputs = inputs.float().cuda()
                 labels = labels.cuda()
-                # breakpoint()
 
-                # inputs, labels = data['signal'], data['metainfo']['label'].values.reshape(-1, 1)
                 # Zero the graidients
                 optimizer.zero_grad()
 
@@ -217,7 +230,6 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
                 # breakpoint()  # Check labels and output
 
                 train_loss += loss  # * inputs.size(0)
-                # train_acc += torch.sum(torch.eq(labels, outputs)) / len(labels)
 
             # Validate
             train_loss = train_loss / (i + 1)
@@ -245,7 +257,7 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
 
         # Evaluate with the testset
         _, test_predicitons = evaluate(net, test_loader, report=True)
-        test_size = len(test_ids)
+        test_size = len(test_predicitons["real_label"])
         report_predicitons.update(
             test_predicitons,
             fold=[
@@ -257,6 +269,9 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
             ]
             * test_size,
         )
+        wandb.run.summary[f"{test_fold}_balanced_accuracy"] = balanced_accuracy_score(
+            test_predicitons["real_label"], test_predicitons["predicted"]
+        )
 
     # Save the predicitons
     fpath = output_dir / "predictions.csv"
@@ -265,6 +280,9 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
     y_df.to_csv(fpath, index=False)
 
     pd.DataFrame(dict(label_name=LABELS_NAME, id=LABELS)).to_csv(output_dir / "labels_name.csv", index=False)
+    wandb.run.summary[f"{test_fold}_bal_acc"] = balanced_accuracy_score(
+        report_predicitons["real_label"], report_predicitons["predicted"]
+    )
 
     print("The end")
 
