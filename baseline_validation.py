@@ -105,15 +105,22 @@ def configure_wandb(run_name: str) -> None:
 
 
 def make_deterministic():
+    # Fix seed
     SEED = 42
-    # Fix torch
     torch.manual_seed(SEED)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(SEED)
-    # Fix numpy
+
     np.random.seed(SEED)
-    # Python
     random.seed(SEED)
+
+    # CUDA convolution determinism
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
+
+    # Set cubLAS enviroment variable to guarantee a deterministc behaviour in multiple streams
+    # https://docs.nvidia.com/cuda/cublas/index.html#results-reproducibility
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 
 def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.Dataset, run_name: str) -> nn.Module:
@@ -269,8 +276,8 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
             ]
             * test_size,
         )
-        wandb.run.summary[f"{test_fold}_balanced_accuracy"] = balanced_accuracy_score(
-            test_predicitons["real_label"], test_predicitons["predicted"]
+        wandb.run.summary[f"{test_fold}_balanced_accuracy"] = (
+            balanced_accuracy_score(test_predicitons["real_label"], test_predicitons["predicted"]) * 100
         )
 
     # Save the predicitons
@@ -280,8 +287,8 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
     y_df.to_csv(fpath, index=False)
 
     pd.DataFrame(dict(label_name=LABELS_NAME, id=LABELS)).to_csv(output_dir / "labels_name.csv", index=False)
-    wandb.run.summary[f"{test_fold}_bal_acc"] = balanced_accuracy_score(
-        report_predicitons["real_label"], report_predicitons["predicted"]
+    wandb.run.summary["total_balanced_accuracy"] = (
+        balanced_accuracy_score(report_predicitons["real_label"], report_predicitons["predicted"]) * 100
     )
 
     print("The end")
@@ -330,7 +337,9 @@ def evaluate(model: nn.Module, evalloader: DataLoader, report=False) -> Tuple[fl
             zero_division=0,
         )
         print(class_report)
-        print("\nBalanced Accuracy: {:3f}%".format(balanced_accuracy_score(data["real_label"], data["predicted"])))
+        print(
+            "\nBalanced Accuracy: {:.3f}%".format(balanced_accuracy_score(data["real_label"], data["predicted"]) * 100)
+        )
         return eval_loss, data
     else:
         return eval_loss, np.NAN
