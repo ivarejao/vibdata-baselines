@@ -12,38 +12,30 @@ import pandas as pd
 import torch.optim as optim
 import vibdata.raw as raw
 from torch import nn
+from models.model import Model
 from torchsampler import ImbalancedDatasetSampler
 from sklearn.metrics import classification_report, balanced_accuracy_score
 from torch.utils.data import Subset, DataLoader, SubsetRandomSampler, WeightedRandomSampler
 from sklearn.model_selection import LeaveOneGroupOut
+from torch.optim.lr_scheduler import MultiStepLR, ExponentialLR
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 from vibdata.deep.signal.transforms import Sequential, StandardScaler, SplitSampleRate, NormalizeSampleRate
 
 import wandb
-from models.model import Model
 from utils.report import ReportDict
 from utils.dataloaders import BalancedBatchSampler, seed_worker
 from utils.MemeDataset import MemeDataset
 
 BATCH_SIZE = 32
-LEARNING_RATE = 1e-1
+LEARNING_RATE = 1
 NUM_EPOCHS = 120
 OUTPUT_ROOT = Path("./output")
+WEIGHT_DECAY = 1e-3
 
-# This program implements an experiment designed in the paper `An experimental
-# methodology to evaluate machine learning methods for fault diagnosis based on
-# vibration signals`.
-# The experiment is executed by a Repeated Nested Cross Validation, and the
-# scheme is described below:
-# The dataset D is divided into 4 folds, where each fold consist of samples
-# recorded with a specific `fault_size`. Then in the outer loop of the
-# cross-validation, the test fold is leaved out where the other 3 folds are used
-# in the inner loop. Inside the inner loop, the fold division are kept and then
-# one fold are choosed for the validation set, and the others two to training.
-# Then, for each set of hyperparameters, the model is trained and valideted in
-# the set division, and the best set of hyperparaeters are used.
-# This process is reapeated until all folds in the inner loop
-# are used as a validation set.
+# Use the second gpu
+if torch.cuda.is_available():
+    assert torch.cuda.device_count() == 2
+    device = torch.device("cuda:1")
 
 
 def parse_args() -> Namespace:
@@ -87,7 +79,7 @@ def main():
 
 def configure_wandb(run_name: str) -> None:
     # Retrieve global variables
-    global LEARNING_RATE, NUM_EPOCHS, BATCH_SIZE
+    global LEARNING_RATE, NUM_EPOCHS, BATCH_SIZE, WEIGHT_DECAY
     wandb.login(key="e510b088c4a273c87de176015dc0b9f0bc30934e")
     wandb.init(
         # Set the project where this run will be logged
@@ -98,6 +90,7 @@ def configure_wandb(run_name: str) -> None:
             "learning_rate": LEARNING_RATE,
             "epochs": NUM_EPOCHS,
             "arquitecture": "resnet-18",
+            "weight_decay": WEIGHT_DECAY,
         },
         # Set the name of the experiment
         name=run_name,
@@ -125,7 +118,7 @@ def make_deterministic():
 
 def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.Dataset, run_name: str) -> nn.Module:
     # Retrive hyperparameters
-    global BATCH_SIZE, LEARNING_RATE, NUM_EPOCHS, ROUNDS
+    global BATCH_SIZE, LEARNING_RATE, NUM_EPOCHS, WEIGHT_DECAY
     print("Beginning training")
     # Create the directory where logs will be stored
     output_dir = OUTPUT_ROOT / run_name
@@ -136,13 +129,11 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
     criterion = nn.CrossEntropyLoss()
 
     logo = LeaveOneGroupOut()
-
     groups = np.array([ret["metainfo"]["load"] for ret in original_dataset])
-
     dataset = MemeDataset(original_dataset)
-
     folds = [fold_ids for _, fold_ids in logo.split(dataset, groups=groups)]
     num_folds = len(folds)
+
     # ---
     # Cross validation
     # ---
@@ -173,13 +164,11 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
         # ---
         val_fold = (test_fold + 1) % num_folds
         val_ids = folds[val_fold]
-        # torch.nn.functional.one_hot(labels).sum(dim=0)
         valset = Subset(dataset, val_ids)
         val_sampler = BalancedBatchSampler(
             labels=get_labels(valset), n_classes=len(LABELS), n_samples=int((BATCH_SIZE / len(LABELS)))
         )
         val_loader = DataLoader(valset, batch_sampler=val_sampler, worker_init_fn=seed_worker, generator=g)
-        # val_loader = DataLoader(valset, batch_size=BATCH_SIZE, num_workers=1, shuffle=True)
 
         # Training set
         # ---
@@ -190,18 +179,19 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
             labels=get_labels(trainset), n_classes=len(LABELS), n_samples=int(BATCH_SIZE / len(LABELS))
         )
         train_loader = DataLoader(trainset, batch_sampler=train_sampler, worker_init_fn=seed_worker, generator=g)
-        # train_loader = DataLoader(trainset, batch_size=BATCH_SIZE, num_workers=1, shuffle=True)
 
         # Instantiate the model
-        net = Model("Resnet18", out_channel=4).new()
+        net = Model("Resnet18", out_channel=4).new(device=device)
+        # Initialize the model with xavier transform
         net.apply(Model.reset_weights)
 
-        # TODO: Implement an initializer weights method
         # Create the optimizer with the learning rate candidate
-        optimizer = optim.Adam(net.parameters(), lr=LEARNING_RATE)
+        optimizer = optim.Adam(net.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+        scheduler = ExponentialLR(optimizer, gamma=0.9)
 
         # Create the net to be saved
         best_val_loss = sys.maxsize
+        best_epoch = 0
         model_path = output_dir / f"model-fold-{test_fold}.pth"
         # ---
         # Train model
@@ -211,8 +201,84 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
             # Train the net
             train_loss = 0.0
             for i, (inputs, labels) in enumerate(train_loader, 0):
-                inputs = inputs.float().cuda()
-                labels = labels.cuda()
+                inputs = inputs.float().to(device)
+                labels = labels.to(device)
+
+                # Zero the graidients
+                optimizer.zero_grad()
+
+                # Perform forward pass
+                outputs = net(inputs)
+
+                # Compute loss
+                loss = criterion(outputs, labels)
+
+                # Do the backpropagation
+                loss.backward()
+
+                # Update the weights
+                optimizer.step()
+
+                # Convert from one-hot to indexing
+                outputs = torch.argmax(outputs, dim=1)
+                # Return to the normalized labels
+                outputs += LABELS.min()
+
+                train_loss += loss
+
+            # Validate
+            train_loss = train_loss / (i + 1)
+            val_loss, _ = evaluate(net, val_loader)
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_epoch = epoch + 1
+                torch.save(net.state_dict(), model_path)
+
+            wandb.log(
+                {
+                    f"{test_fold}_train_loss": train_loss,
+                    f"{test_fold}_val_loss": val_loss,
+                    f"{test_fold}_learning_rate": optimizer.param_groups[0]["lr"],
+                }
+            )
+            print(
+                f"[{epoch + 1 : 3d}] train_loss: {train_loss:5.3f} ",
+                f"| val_loss: {val_loss:5.3f} ",
+                f"| lr: {optimizer.param_groups[0]['lr']:5.3f}",
+            )
+
+            # Update the learning rate
+            scheduler.step()
+
+        # TRAIN WITH ALL THE TRAINSETS
+        print("Training Final Model".center(30, "="))
+        # Join the train and validation set
+        final_train_folds = set(range(num_folds)).difference(set([test_fold]))
+        final_train_ids = np.concatenate([folds[i] for i in final_train_folds])
+        final_trainset = Subset(dataset, final_train_ids)
+        final_train_sampler = BalancedBatchSampler(
+            labels=get_labels(final_trainset), n_classes=len(LABELS), n_samples=int(BATCH_SIZE / len(LABELS))
+        )
+        final_train_loader = DataLoader(
+            final_trainset, batch_sampler=final_train_sampler, worker_init_fn=seed_worker, generator=g
+        )
+
+        # Instantiate the model
+        net = Model("Resnet18", out_channel=4).new(device=device)
+        net.apply(Model.reset_weights)
+
+        # Create the optimizer with the learning rate candidate
+        optimizer = optim.Adam(net.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+        scheduler = ExponentialLR(optimizer, gamma=0.9)
+
+        # Train model
+        for epoch in range(best_epoch):
+            # Train the net
+            train_loss = 0.0
+            for i, (inputs, labels) in enumerate(final_train_loader, 0):
+                inputs = inputs.float().to(device)
+                labels = labels.to(device)
 
                 # Zero the graidients
                 optimizer.zero_grad()
@@ -236,31 +302,28 @@ def experiment(param_grid: Dict[str, Model], original_dataset: torch.utils.data.
                 outputs += LABELS.min()
                 # breakpoint()  # Check labels and output
 
-                train_loss += loss  # * inputs.size(0)
+                train_loss += loss
 
-            # Validate
+            # Log
             train_loss = train_loss / (i + 1)
-            val_loss, _ = evaluate(net, val_loader)
-
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                torch.save(net.state_dict(), model_path)
 
             wandb.log(
                 {
-                    f"{test_fold}_train_loss": train_loss,
-                    f"{test_fold}_val_loss": val_loss,
+                    f"{test_fold}_final_train_loss": train_loss,
                 }
             )
-            print(f"[{epoch + 1 : 3d}] train_loss: {train_loss:5.3f} | val_loss: {val_loss:5.3f}")
+            print(f"=> [{epoch + 1 : 3d}] final_train_loss: {train_loss:5.3f} ")
+
+            # Update the learning rate
+            scheduler.step()
+
+        # Save the model
+        torch.save(net.state_dict(), model_path)
 
         # ---
         # Test model
         # ---
         print("Testing".center(30, "="))
-        # Retrieve the best model
-        net = Model("Resnet18", out_channel=4).new()
-        net.load_state_dict(torch.load(model_path))
 
         # Evaluate with the testset
         _, test_predicitons = evaluate(net, test_loader, report=True)
@@ -310,8 +373,8 @@ def evaluate(model: nn.Module, evalloader: DataLoader, report=False) -> Tuple[fl
             labels -= torch.min(labels)
             # Move to gpu
             if torch.cuda.is_available():
-                data = data.float().cuda()
-                labels = labels.cuda()
+                data = data.float().to(device)
+                labels = labels.to(device)
 
             output = model(data)
             loss = criterion(output, labels)
