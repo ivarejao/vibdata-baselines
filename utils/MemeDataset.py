@@ -1,9 +1,10 @@
 import pandas as pd
 from torch.utils.data import Dataset
+from vibdata.deep.DeepDataset import DeepDataset
 
 
 class MemeDataset(Dataset):
-    def __init__(self, src_dataset, standardize=False):
+    def __init__(self, src_dataset: DeepDataset, standardize=False):
         self.dataset = src_dataset
         self.standardize = standardize
 
