@@ -12,7 +12,7 @@ from utils.MemeDataset import MemeDataset
 
 
 class DataSampling:
-    def __init__(self, original_dataset: Dataset, config: Config, labels=None) -> None:
+    def __init__(self, original_dataset: Dataset, config: Config) -> None:
         # Define the folds
         logo = LeaveOneGroupOut()
         groups = np.array([ret["metainfo"]["load"] for ret in original_dataset])
@@ -21,9 +21,11 @@ class DataSampling:
         # Split the dataset into folds based on a conditon
         self.folds = [fold_ids for _, fold_ids in logo.split(self.dataset, groups=groups)]
 
-        if labels is None:
-            labels = np.unique(self.arange_labels(self.dataset))
-        self.labels = labels
+        # TODO: Reimplement these methods `get_labels` and `get_labels_name`
+        # calling the respective methods directly from MemeDataset as it will
+        # inherinthe from DeepDataset
+        self.labels = self.dataset.dataset.get_labels()
+        self.labels_name = self.dataset.dataset.get_labels_name()
         self.config = config
 
         # Create generator for the dataloaders
@@ -77,14 +79,11 @@ class DataSampling:
         )
 
     # Getter and Setters
-    # TODO: Reimplement these methods `get_labels` and `get_labels_name`
-    # calling the respective methods directly from MemeDataset as it will
-    # inherinthe from DeepDataset
     def get_labels(self) -> npt.NDArray[np.int_]:
-        return self.dataset.dataset.get_labels()
+        return self.labels
 
     def get_labels_name(self) -> npt.NDArray[np.str_]:
-        return self.dataset.dataset.get_labels_name()
+        return self.labels_name
 
     def get_num_folds(self) -> np.int32:
         return len(self.folds)

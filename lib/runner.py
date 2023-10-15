@@ -13,6 +13,7 @@ from lib.config import Config
 from lib.sampling import DataSampling
 from utils.report import ReportDict
 from lib.experiment import Experiment
+from lib.models.model import Model
 
 
 class ExpRunner:
@@ -34,6 +35,7 @@ class ExpRunner:
 
         device = self.config.get_device()
         model = self.config.get_model(device=device)
+        model.apply(Model.reset_weights)
         optimizer = self.config.get_optimizer(model_parameters=model.parameters())
         train_loader = self.dataset.get_trainloader()
         schedulers = self.config.get_lr_scheduler(optimizer=optimizer)
@@ -48,10 +50,11 @@ class ExpRunner:
 
         starting_epoch = 1
         max_epochs = self.config["epochs"] if max_epochs is None else max_epochs
+        prefix_log = f"{test_fold}" if on_validation else f"{test_fold}_final"
         # TODO: make a checkpoint loading
         # if self.resume:
         #     starting_epoch = ...
-
+        model.train()
         for epoch in range(starting_epoch, max_epochs + 1):
             # Train the net
             train_loss = 0.0
@@ -86,8 +89,8 @@ class ExpRunner:
 
             # Define logs messages
             wandb_metrics_log = {
-                f"{test_fold}_train_loss": train_loss,
-                f"{test_fold}_learning_rate": optimizer.param_groups[0]["lr"],
+                f"{prefix_log}_train_loss": train_loss,
+                f"{prefix_log}_learning_rate": optimizer.param_groups[0]["lr"],
             }
 
             log_message = f"[{epoch : 3d}] train_loss: {train_loss:5.3f} "
@@ -99,7 +102,7 @@ class ExpRunner:
             if on_validation:
                 val_loss = self.eval(epoch, on_validation=True)
 
-                wandb_metrics_log.update({f"{test_fold}_val_loss": val_loss})
+                wandb_metrics_log.update({f"{prefix_log}_val_loss": val_loss})
                 log_message += f"| val_loss: {val_loss:5.3f}"
 
                 if val_loss < best_validation_loss:
@@ -110,7 +113,8 @@ class ExpRunner:
             print(log_message)
 
             # Update the learning rate
-            map(lambda x: x.step(), schedulers)
+            for s in schedulers:
+                s.step()
 
         # If it was only training the net without searching for the best parameters, save the current model
         # at the end of the training as the `best_model_{fold}`
@@ -200,11 +204,9 @@ class ExpRunner:
                 zero_division=0,
             )
             print(class_report)
-            print(
-                "\nBalanced Accuracy: {:.3f}%".format(
-                    balanced_accuracy_score(data["real_label"], data["predicted"]) * 100
-                )
-            )
+            bal_acc = balanced_accuracy_score(data["real_label"], data["predicted"]) * 100
+            print("\nBalanced Accuracy: {:.3f}%".format(bal_acc))
+            wandb.run.summary[f"{test_fold}_balanced_accuracy"] = bal_acc
 
         return eval_loss
 

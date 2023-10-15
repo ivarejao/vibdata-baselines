@@ -15,10 +15,10 @@ lr_scheduler:
   - name: ExponentialLR
     parameters:
       gamma: 0.9
-  - name: MultiStepLR
-    parameters:
-      milestones: [28, 90]
-      gamma: 0.1
+  # - name: MultiStepLR
+  #   parameters:
+  #     milestones: [28, 90]
+  #     gamma: 0.1
 model:
   name: resnet18
   parameters:

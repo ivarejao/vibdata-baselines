@@ -48,7 +48,9 @@ def main():
         best_epoch = runner.train(on_validation=True)
         # After finding the best epoch train with both training set and validation set until
         # the best epoch found
+        data_sampling.split(test_fold=test_fold, with_val_set=False)
         runner.train(max_epochs=best_epoch)
+        # runner.train(max_epochs=best_epoch)
         # Test with the model trained with both training and validation sets
         runner.eval(epoch=best_epoch)
 

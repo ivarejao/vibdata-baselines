@@ -16,7 +16,7 @@ class Experiment:
         self.cfg_path = os.path.join(self.exp_dirpath, "config.yaml")
         self.code_state_path = os.path.join(self.exp_dirpath, "code_state.txt")
 
-        self.cfg = None
+        self.cfg: Config = None
         self.setup_exp_dir()
 
         # TODO: add loggin instead of printing in stdout
@@ -86,6 +86,7 @@ class Experiment:
         wandb.init(
             # Set the project where this run will be logged
             project="vibdata-deeplearning-timedomain",
+            # TODO; Create wandb artifact from yaml config  # config=self.cfg.get_yaml(),
             # Track hyperparameters and run metadata
             config={
                 "batch_size": self.cfg["batch_size"],
@@ -97,3 +98,6 @@ class Experiment:
             # Set the name of the experiment
             name=run_name,
         )
+        # Add configuration file into the wandb log
+        wandb.save(self.cfg_path, policy="now")
+        wandb.save(self.code_state_path, policy="now")

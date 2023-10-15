@@ -39,6 +39,9 @@ class Config:
     def __contains__(self, item):
         return item in self.config
 
+    def get_yaml(self):
+        return self.config
+
     def get_optimizer(self, model_parameters):
         return getattr(torch.optim, self.config["optimizer"]["name"])(
             model_parameters, **self.config["optimizer"]["parameters"]
@@ -62,9 +65,6 @@ class Config:
         else:
             device = torch.device("cpu")
         return device
-
-    # def get_dataset(self, split):
-    #     return getattr(datasets, self.config["datasets"][split]["type"])(**self.config["datasets"][split]["parameters"])
 
     def get_model(self, **kwargs) -> torch.nn.Module:
         # Besides the default parameters given when Config is instantiated, these can be override, passing as kwargs
