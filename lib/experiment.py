@@ -82,10 +82,10 @@ class Experiment:
         if self.cfg is None:
             raise ValueError("In order to configure wandb run, the configuration must be set")
         # Retrieve global variables
-        wandb.login(key="e510b088c4a273c87de176015dc0b9f0bc30934e")
+        wandb.login(key=os.environ["WANDB_KEY"])
         wandb.init(
             # Set the project where this run will be logged
-            project="vibdata-deeplearning-timedomain",
+            project=os.environ["WANDB_PROJECT"],
             # TODO; Create wandb artifact from yaml config  # config=self.cfg.get_yaml(),
             # Track hyperparameters and run metadata
             config={
