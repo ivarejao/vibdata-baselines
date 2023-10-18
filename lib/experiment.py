@@ -2,6 +2,7 @@ import os
 import subprocess
 
 import torch
+from dotenv import load_dotenv
 
 import wandb
 from lib.config import Config
@@ -19,6 +20,8 @@ class Experiment:
         self.cfg: Config = None
         self.setup_exp_dir()
 
+        # Load the enviroment variable from `.env`
+        load_dotenv()
         # TODO: add loggin instead of printing in stdout
         # if args is not None:
         #     self.log_args(args)
