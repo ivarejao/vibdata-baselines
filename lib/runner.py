@@ -1,6 +1,8 @@
 import os
 import sys
 import random
+import itertools
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
@@ -29,14 +31,14 @@ class ExpRunner:
         if deterministic:
             self.set_deterministic(self.config["seed"])
 
-    def train(self, on_validation: bool = False, max_epochs: int = None) -> int:
+    def train(self, on_validation: bool = False, max_epochs: int = None, **kwargs) -> int:
         training_name = "Training" if on_validation else "Final Training"
         print(training_name.center(30, "="))
 
         device = self.config.get_device()
         model = self.config.get_model(device=device)
         model.apply(Model.reset_weights)
-        optimizer = self.config.get_optimizer(model_parameters=model.parameters())
+        optimizer = self.config.get_optimizer(model_parameters=model.parameters(), **kwargs)
         train_loader = self.dataset.get_trainloader()
         schedulers = self.config.get_lr_scheduler(optimizer=optimizer)
         test_fold = self.dataset.get_fold()
@@ -128,7 +130,11 @@ class ExpRunner:
                 file_name="best_model_fold_{:02d}_epochs_{:03d}.pt".format(test_fold, max_epochs),
             )
 
-        return best_train_epoch if on_validation else max_epochs
+        if on_validation:
+            ret = (best_train_epoch, best_validation_loss)
+        else:
+            ret = (max_epochs, None)
+        return ret
 
     def eval(self, epoch, on_validation=False) -> None:
         if not on_validation:
@@ -209,6 +215,38 @@ class ExpRunner:
             wandb.run.summary[f"{test_fold}_balanced_accuracy"] = bal_acc
 
         return eval_loss
+
+    def grid_search_train(self) -> Tuple[int, Dict[str, Any]]:
+        params_grid = self.config["params_grid"]
+        keys = list(params_grid.keys())
+        values = list(params_grid.values())
+
+        optimal_val_loss = sys.maxsize
+        optimal_epoch = 0
+        optimal_params_set = {k: None for k in keys}
+
+        all_combinations = list(itertools.product(*values))
+        num_combinations = len(all_combinations)
+        for i, combination_values in enumerate(all_combinations):
+            # Organize the combination values based on keys
+            combination = {key: value for key, value in zip(keys, combination_values)}
+            # Log the combination used
+            print(" Grid search {}/{} ".format(i + 1, num_combinations).center(30, "="))
+            print("Params:\n" + "\n".join([f"{key} : {value}" for key, value in zip(keys, combination_values)]))
+            # Train the model overriding these params
+            epoch, val_loss = self.train(on_validation=True, **combination)
+            if val_loss < optimal_val_loss:
+                optimal_epoch = epoch
+                optimal_val_loss = val_loss
+                optimal_params_set = combination
+
+        # Print the best parameters found
+        print()
+        print("Best set found".center(30, "-"))
+        print("Epoch: {}".format(optimal_epoch))
+        print("Params:\n" + "\n".join([f"{key} : {value}" for key, value in optimal_params_set.items()]))
+
+        return optimal_epoch, optimal_params_set
 
     def finish(self):
         # Save the predicitons

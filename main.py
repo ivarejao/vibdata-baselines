@@ -45,11 +45,11 @@ def main():
         # Allocate the test, val and train set based on the folds
         data_sampling.split(test_fold=test_fold, with_val_set=True)
         # Train the model with validation in order to find the best epoch
-        best_epoch = runner.train(on_validation=True)
+        best_epoch, best_params = runner.grid_search_train()
         # After finding the best epoch train with both training set and validation set until
         # the best epoch found
         data_sampling.split(test_fold=test_fold, with_val_set=False)
-        runner.train(max_epochs=best_epoch)
+        runner.train(max_epochs=best_epoch, **best_params)
         # runner.train(max_epochs=best_epoch)
         # Test with the model trained with both training and validation sets
         runner.eval(epoch=best_epoch)

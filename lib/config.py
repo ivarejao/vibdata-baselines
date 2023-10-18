@@ -42,10 +42,15 @@ class Config:
     def get_yaml(self):
         return self.config
 
-    def get_optimizer(self, model_parameters):
-        return getattr(torch.optim, self.config["optimizer"]["name"])(
-            model_parameters, **self.config["optimizer"]["parameters"]
-        )
+    def get_optimizer(self, model_parameters, **kwargs):
+        opt_params = self.config["optimizer"]["parameters"]
+        # Override the params
+        for key, value in kwargs.items():
+            # Just ensure that the key exists in optimizer params
+            if key in opt_params:
+                opt_params[key] = value
+
+        return getattr(torch.optim, self.config["optimizer"]["name"])(model_parameters, **opt_params)
 
     def get_lr_scheduler(self, optimizer: torch.optim.Optimizer):
         lr_schedulers = []

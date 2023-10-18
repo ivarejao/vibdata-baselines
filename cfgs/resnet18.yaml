@@ -1,5 +1,5 @@
 # Experiment overall settings
-epochs: 120
+epochs: 80
 batch_size: 32
 seed: 42
 model_checkpoint_gap: 1
@@ -39,5 +39,6 @@ dataset:
       - name: StandardScaler
         parameters: 
           on_field: signal
-
+params_grid:
+  lr: [1, 0.01, 0.001, 0.0003]
 
