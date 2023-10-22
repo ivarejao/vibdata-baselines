@@ -25,6 +25,7 @@ model:
     out_channel: 4
 dataset:
   name: CWRU
+  groups_dir: "data/groups"
   raw: 
     root: "data/raw_datasets"
   deep:

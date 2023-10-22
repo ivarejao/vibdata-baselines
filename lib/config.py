@@ -24,6 +24,9 @@ class Config:
             self.config["optimizer"]["parameters"]["lr"] = (
                 self.config["optimizer"]["parameters"]["lr"] if args.lr is None else self.args.lr
             )
+            self.config["dataset"]["name"] = (
+                self.config["dataset"]["name"] if args.dataset is None else self.args.dataset
+            )
 
     def load(self, path):
         with open(path, "r") as file:

@@ -6,6 +6,7 @@ import numpy.typing as npt
 from torch.utils.data import Subset, Dataset, DataLoader
 from sklearn.model_selection import LeaveOneGroupOut
 
+import lib.data.group_dataset as groups_module
 from lib.config import Config
 from utils.dataloaders import BalancedBatchSampler
 from utils.MemeDataset import MemeDataset
@@ -15,7 +16,9 @@ class DataSampling:
     def __init__(self, original_dataset: Dataset, config: Config) -> None:
         # Define the folds
         logo = LeaveOneGroupOut()
-        groups = np.array([ret["metainfo"]["load"] for ret in original_dataset])
+
+        group_obj = getattr(groups_module, "Group" + config["dataset"]["name"])(dataset=original_dataset, config=config)
+        groups = group_obj.groups()
 
         self.dataset = MemeDataset(original_dataset)
         # Split the dataset into folds based on a conditon

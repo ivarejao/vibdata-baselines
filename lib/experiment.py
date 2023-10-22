@@ -50,9 +50,6 @@ class Experiment:
         with open(self.code_state_path, "w") as code_state_file:
             code_state_file.write(state)
 
-    # def get_checkpoint_path(self, epoch):
-    #     return os.path.join(self.models_dirpath, "model_{:04d}.pt".format(epoch))
-
     def save_state(self, fold, epoch, model, optimizer, schedulers, file_name=None):
         if file_name is None:
             file_name = "model_fold_{:02d}_epochs_{:04d}.pt".format(fold, epoch)
@@ -67,10 +64,6 @@ class Experiment:
             },
             train_state_path,
         )
-
-    # def checkpoint(self, epoch, model, optimizer, schedulers):
-    #     if epoch % self.cfg["model_checkpoint_gap"] == 0:
-    #         self.save_train_state(epoch, model, optimizer, schedulers)
 
     def get_results_dirpath(self):
         return self.results_dirpath
@@ -89,8 +82,7 @@ class Experiment:
         wandb.init(
             # Set the project where this run will be logged
             project=os.environ["WANDB_PROJECT"],
-            # TODO; Create wandb artifact from yaml config  # config=self.cfg.get_yaml(),
-            # Track hyperparameters and run metadata
+            # Track essentials hyperparameters and run metadata
             config={
                 "batch_size": self.cfg["batch_size"],
                 "learning_rate": self.cfg["optimizer"]["parameters"]["lr"],

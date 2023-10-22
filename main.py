@@ -14,6 +14,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--run", help="Name of the experiment", required=True)
     parser.add_argument("--lr", help="Learning rate", type=float)
     parser.add_argument("--pretrained", help="Pretrained", action="store_true")
+    parser.add_argument("--dataset", help="The dataset name")
     args = parser.parse_args()
     return args
 
