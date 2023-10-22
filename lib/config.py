@@ -83,7 +83,7 @@ class Config:
         raw_root_dir = self.config["dataset"]["raw"]["root"]
         raw_dataset_package = getattr(datasets, dataset_name)
         raw_dataset_module = getattr(raw_dataset_package, dataset_name)
-        raw_dataset = getattr(raw_dataset_module, dataset_name + "_raw")(raw_root_dir)
+        raw_dataset = getattr(raw_dataset_module, dataset_name + "_raw")(raw_root_dir, download=True)
 
         deep_root_dir = os.path.join(self.config["dataset"]["deep"]["root"], dataset_name)
         # Get the transforms to be applied
