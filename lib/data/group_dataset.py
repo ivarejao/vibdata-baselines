@@ -45,6 +45,30 @@ class GroupDataset:
         pass
 
 
+class GroupCWRU(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        return sample["metainfo"]["load"]
+
+
+class GroupPU(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        rotation_speed = sample["metainfo"]["file_name"][:3]
+        load_torque = sample['metainfo']['load_nm']
+        radial_force = sample['metainfo']['radial_force_n']
+        if rotation_speed == "N15" and load_torque == 0.7 and radial_force == 1000:
+            return 1
+        elif rotation_speed == "N09" and load_torque == 0.7 and radial_force == 1000:
+            return 2
+        elif rotation_speed == "N15" and load_torque == 0.1 and radial_force == 1000:
+            return 3
+        elif rotation_speed == "N15" and load_torque == 0.7 and radial_force == 400:
+            return 4
+        else:
+            raise Exception("Unexpected operating condition")
+
+
 class GroupXJTU(GroupDataset):
     @staticmethod
     def _assigne_group(sample: SignalSample) -> int:
@@ -57,9 +81,3 @@ class GroupXJTU(GroupDataset):
             return 3
         else:
             raise Exception(f"The file {file_name} does not belong to any group")
-
-
-class GroupCWRU(GroupDataset):
-    @staticmethod
-    def _assigne_group(sample: SignalSample) -> int:
-        return sample["metainfo"]["load"]
