@@ -36,7 +36,8 @@ class ExpRunner:
         print(training_name.center(30, "="))
 
         device = self.config.get_device()
-        model = self.config.get_model(device=device)
+        model = self.config.get_model()
+        model.to(device)
         model.apply(Model.reset_weights)
         optimizer = self.config.get_optimizer(model_parameters=model.parameters(), **kwargs)
         train_loader = self.dataset.get_trainloader()
@@ -52,7 +53,7 @@ class ExpRunner:
 
         starting_epoch = 1
         max_epochs = self.config["epochs"] if max_epochs is None else max_epochs
-        prefix_log = f"{test_fold}" if on_validation else f"{test_fold}_final"
+        prefix_log = f"fold:{test_fold}/" if on_validation else f"fold:{test_fold}/final"
         # TODO: make a checkpoint loading
         # if self.resume:
         #     starting_epoch = ...
@@ -79,20 +80,20 @@ class ExpRunner:
                 # Update the weights
                 optimizer.step()
 
-                # Convert from one-hot to indexing
+                # # Convert from one-hot to indexing
                 outputs = torch.argmax(outputs, dim=1)
-                # Return to the normalized labels
+                # # Return to the normalized labels
                 outputs += self.dataset.get_labels().min()
 
-                train_loss += loss
+                train_loss += float(loss)
 
             # Validate
             train_loss = train_loss / (i + 1)
 
             # Define logs messages
             wandb_metrics_log = {
-                f"{prefix_log}_train_loss": train_loss,
-                f"{prefix_log}_learning_rate": optimizer.param_groups[0]["lr"],
+                f"{prefix_log}train_loss": train_loss,
+                f"{prefix_log}learning_rate": optimizer.param_groups[0]["lr"],
             }
 
             log_message = f"[{epoch : 3d}] train_loss: {train_loss:5.3f} "
@@ -104,7 +105,7 @@ class ExpRunner:
             if on_validation:
                 val_loss = self.eval(epoch, on_validation=True)
 
-                wandb_metrics_log.update({f"{prefix_log}_val_loss": val_loss})
+                wandb_metrics_log.update({f"{prefix_log}val_loss": val_loss})
                 log_message += f"| val_loss: {val_loss:5.3f}"
 
                 if val_loss < best_validation_loss:

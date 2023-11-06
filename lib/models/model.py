@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from xgboost import XGBClassifier
+from tsai.models.XResNet1d import xresnet1d18
 
 from .Resnet1d import resnet18, resnet34
 from .Alexnet1d import alexnet
@@ -10,6 +11,7 @@ models = {
     "resnet18": resnet18,
     "resnet34": resnet34,
     "xgbclassifier": XGBClassifier,
+    "xresnet18": xresnet1d18,
 }
 
 

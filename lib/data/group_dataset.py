@@ -27,6 +27,7 @@ class GroupDataset:
             return np.load(self.groups_file)
         else:
             groups = np.array(list(map(self._assigne_group, self.dataset)))
+            os.makedirs(self.groups_dir, exist_ok=True)  # Ensure that the directory exists
             np.save(self.groups_file, groups)
             return groups
 
