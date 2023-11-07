@@ -51,6 +51,71 @@ class GroupCWRU(GroupDataset):
         return sample["metainfo"]["load"]
 
 
+class GroupEAS(GroupDataset):
+    normal_groups = {
+        1: 0,
+        2: 0,
+        3: 0,
+        4: 0,
+    }
+
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        unbalance_factor = sample["metainfo"]["unbalance_factor"]
+
+        if unbalance_factor == 45:
+            return 1
+        elif unbalance_factor == 60:
+            return 2
+        elif unbalance_factor == 75:
+            return 3
+        elif unbalance_factor == 152:
+            return 4
+        elif unbalance_factor == 0:
+            group = min(GroupEAS.normal_groups, key=GroupEAS.normal_groups.get)
+            GroupEAS.normal_groups[group] += 1
+            return group
+        else:
+            raise Exception("Unexpected sample")
+
+
+class GroupIMS(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        pass
+
+
+class GroupMAFAULDA(GroupDataset):
+    normal_groups = {
+        1: 0,
+        2: 0,
+        3: 0,
+    }
+
+    def __init__(self, dataset: DeepDataset, config: Config) -> None:
+        super().__init__(dataset, config)
+
+        keys = dataset.get_labels_name()
+        values = dataset.get_labels()
+        pass
+
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        if sample["metainfo"]["label"] == 13:  # Normal
+            group = min(GroupMAFAULDA.normal_groups, key=GroupMAFAULDA.normal_groups.get)
+            GroupMAFAULDA.normal_groups[group] += 1
+            return group
+        else:
+            test_measure = sample['metainfo']['test_measure']
+            pass
+
+
+class GroupMFPT(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        pass
+
+
 class GroupPU(GroupDataset):
     @staticmethod
     def _assigne_group(sample: SignalSample) -> int:
@@ -67,6 +132,16 @@ class GroupPU(GroupDataset):
             return 4
         else:
             raise Exception("Unexpected operating condition")
+
+
+class GroupUOC(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        severity = sample['metainfo']['severity']
+        if severity != "-":
+            return int(severity)
+        else:
+            pass
 
 
 class GroupXJTU(GroupDataset):
