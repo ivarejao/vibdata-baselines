@@ -1,6 +1,6 @@
 # Experiment overall settings
 epochs: 80
-batch_size: 64
+batch_size: 8
 seed: 42
 model_checkpoint_gap: 1
 # Training settings
@@ -15,12 +15,8 @@ lr_scheduler:
   - name: ExponentialLR
     parameters:
       gamma: 0.9
-  # - name: MultiStepLR
-  #   parameters:
-  #     milestones: [28, 90]
-  #     gamma: 0.1
 model:
-  name: xresnet18
+  name: resnet18-tsai
   parameters:
     c_in: 1
     c_out: 4
@@ -42,5 +38,5 @@ dataset:
         parameters: 
           on_field: signal
 params_grid:
-  lr: [0.01, 0.001, 0.0003]
+  lr: [1, 0.01, 0.001, 0.0003]
 

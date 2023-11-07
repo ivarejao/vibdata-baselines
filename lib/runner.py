@@ -9,6 +9,8 @@ import torch
 import pandas as pd
 from torch import nn
 from sklearn.metrics import classification_report, balanced_accuracy_score
+from torch.amp.autocast_mode import autocast
+from torch.cuda.amp.grad_scaler import GradScaler
 
 import wandb
 from lib.config import Config
@@ -57,6 +59,7 @@ class ExpRunner:
         # TODO: make a checkpoint loading
         # if self.resume:
         #     starting_epoch = ...
+        scaler = GradScaler()
         model.train()
         for epoch in range(starting_epoch, max_epochs + 1):
             # Train the net
@@ -68,17 +71,22 @@ class ExpRunner:
                 # Zero the graidients
                 optimizer.zero_grad()
 
-                # Perform forward pass
-                outputs = model(inputs)
+                with autocast(device_type="cuda", dtype=torch.float16):
+                    # Perform forward pass
+                    outputs = model(inputs)
 
-                # Compute loss
-                loss = criterion(outputs, labels)
+                    # Compute loss
+                    loss = criterion(outputs, labels)
 
                 # Do the backpropagation
-                loss.backward()
+                scaler.scale(loss).backward()
+                # loss.backward()
 
                 # Update the weights
-                optimizer.step()
+                scaler.step(optimizer)
+                # optimizer.step()
+
+                scaler.update()
 
                 # # Convert from one-hot to indexing
                 outputs = torch.argmax(outputs, dim=1)
@@ -154,7 +162,8 @@ class ExpRunner:
             print("Loading model {}".format(model_fname))
         # Load the model
         model_path = self.experiment.get_model_path(file_name=model_fname)
-        model = self.config.get_model(device=device)
+        model = self.config.get_model()
+        model.to(device=device)
         model.load_state_dict(self.experiment.get_model_state(model_path))
         model.eval()
 
@@ -245,7 +254,9 @@ class ExpRunner:
         print()
         print("Best set found".center(30, "-"))
         print("Epoch: {}".format(optimal_epoch))
+        print("Validation loss: {}".format(optimal_val_loss))
         print("Params:\n" + "\n".join([f"{key} : {value}" for key, value in optimal_params_set.items()]))
+        wandb.summary["{}_best_val_loss".format(self.dataset.get_fold())] = optimal_val_loss
 
         return optimal_epoch, optimal_params_set
 

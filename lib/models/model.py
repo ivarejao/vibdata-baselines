@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 from xgboost import XGBClassifier
+from tsai.models.ResNet import ResNet
 from tsai.models.XResNet1d import xresnet1d18
 
+from .M5 import M5
 from .Resnet1d import resnet18, resnet34
 from .Alexnet1d import alexnet
 
@@ -12,6 +14,8 @@ models = {
     "resnet34": resnet34,
     "xgbclassifier": XGBClassifier,
     "xresnet18": xresnet1d18,
+    "m5": M5,
+    "resnet18-tsai": ResNet,
 }
 
 
@@ -20,10 +24,8 @@ class Model:
         self.model_name = model_name
         self.key_values = kwargs
 
-    def new(self, device: torch.device = None, **kwargs):
+    def new(self, **kwargs):
         net = models[self.model_name](**self.key_values, **kwargs)
-        if torch.cuda.is_available() and hasattr(net, "cuda"):
-            net = net.cuda() if not device else net.to(device)
         return net
 
     @classmethod
