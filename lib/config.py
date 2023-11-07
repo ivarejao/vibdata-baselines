@@ -27,6 +27,7 @@ class Config:
             self.config["dataset"]["name"] = (
                 self.config["dataset"]["name"] if args.dataset is None else self.args.dataset
             )
+            self.config["batch_size"] = self.config["batch_size"] if args.dataset is None else self.args.batch_size
 
     def load(self, path):
         with open(path, "r") as file:

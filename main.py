@@ -9,9 +9,10 @@ from lib.experiment import Experiment
 
 def parse_args() -> Namespace:
     parser = ArgumentParser()
-    parser.add_argument("--epochs", help="Number of epochs", type=int)
     parser.add_argument("--cfg", help="Config file", required=True)
     parser.add_argument("--run", help="Name of the experiment", required=True)
+    parser.add_argument("--epochs", help="Number of epochs", type=int)
+    parser.add_argument("--batch-size", help="Size of minibatching", type=int)
     parser.add_argument("--lr", help="Learning rate", type=float)
     parser.add_argument("--pretrained", help="Pretrained", action="store_true")
     parser.add_argument("--dataset", help="The dataset name")
