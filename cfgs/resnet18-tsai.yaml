@@ -17,6 +17,7 @@ lr_scheduler:
       gamma: 0.9
 model:
   name: resnet18-tsai
+  output_param: c_out
   parameters:
     c_in: 1
     c_out: 4

@@ -55,7 +55,7 @@ class ExpRunner:
 
         starting_epoch = 1
         max_epochs = self.config["epochs"] if max_epochs is None else max_epochs
-        prefix_log = f"fold:{test_fold}/" if on_validation else f"fold:{test_fold}/final"
+        prefix_log = f"fold:{test_fold}/" if on_validation else f"fold:{test_fold}/final_"
         # TODO: make a checkpoint loading
         # if self.resume:
         #     starting_epoch = ...
@@ -67,6 +67,8 @@ class ExpRunner:
             for i, (inputs, labels) in enumerate(train_loader, 0):
                 inputs = inputs.float().to(device)
                 labels = labels.to(device)
+                # Normalize the labels
+                labels -= self.dataset.get_labels().min()
 
                 # Zero the graidients
                 optimizer.zero_grad()
@@ -88,10 +90,11 @@ class ExpRunner:
 
                 scaler.update()
 
-                # # Convert from one-hot to indexing
-                outputs = torch.argmax(outputs, dim=1)
+                # - - Unnecessary computation
+                # Convert from one-hot to indexing
+                # outputs = torch.argmax(outputs, dim=1)
                 # # Return to the normalized labels
-                outputs += self.dataset.get_labels().min()
+                # outputs += self.dataset.get_labels().min()
 
                 train_loss += float(loss)
 
@@ -179,7 +182,7 @@ class ExpRunner:
                 data = data.float().to(device)
                 labels = labels.to(device)
                 # Normalize labels
-                labels -= np.min(self.dataset.labels)
+                labels -= self.dataset.get_labels().min()
 
                 output = model(data)
                 loss = criterion(output, labels)
@@ -188,7 +191,9 @@ class ExpRunner:
                 # Convert from one-hot to indexing
                 output = torch.argmax(output, dim=1)
                 # Return to the normalized labels
-                output += self.dataset.labels.min()
+                output += self.dataset.get_labels().min()
+                # Return labels
+                labels += self.dataset.get_labels().min()
 
                 # Moves the report variables into the cpu to not overload the gpu
                 macro_output.append(output.cpu().numpy())
@@ -265,6 +270,9 @@ class ExpRunner:
         predictions_path = os.path.join(self.experiment.get_results_dirpath(), "predictions.csv")
         predicitons = pd.DataFrame(self.data_report)
         predicitons.to_csv(predictions_path, index=False)
+
+        # Save predictions in wandb
+        wandb.save(predictions_path, policy="now")
 
         wandb.run.summary["total_balanced_accuracy"] = (
             balanced_accuracy_score(predicitons["real_label"], predicitons["predicted"]) * 100

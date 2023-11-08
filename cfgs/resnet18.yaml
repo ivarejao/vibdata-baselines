@@ -17,6 +17,7 @@ lr_scheduler:
       gamma: 0.9
 model:
   name: resnet18
+  output_param: out_channel
   parameters:
     out_channel: 4
 dataset:

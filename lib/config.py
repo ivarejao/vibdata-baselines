@@ -13,9 +13,6 @@ class Config:
     def __init__(self, config_path, args=None):
         self.config = {}
         self.load(config_path)
-        name = self.config["model"]["name"]
-        parameters = self.config["model"]["parameters"]
-        self.model_constructor = Model(name, **parameters)
 
         # Override the configuration with the cli args
         if args:
@@ -29,10 +26,23 @@ class Config:
             )
             self.config["batch_size"] = self.config["batch_size"] if args.dataset is None else self.args.batch_size
 
+        self.setup_model()
+
     def load(self, path):
         with open(path, "r") as file:
             config_str = file.read()
         self.config = yaml.load(config_str, Loader=yaml.FullLoader)
+
+    def setup_model(self):
+        name = self.config["model"]["name"]
+        parameters = self.config["model"]["parameters"]
+        output_param_name = self.config["model"]["output_param"]
+
+        # TODO: improve it by only calling one time this funcion
+        dataset: DeepDataset = self.get_dataset()
+        parameters[output_param_name] = len(dataset.get_labels())
+
+        self.model_constructor = Model(name, **parameters)
 
     def __repr__(self):
         return yaml.dump(self.config, default_flow_style=False)
