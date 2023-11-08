@@ -93,22 +93,70 @@ class GroupMAFAULDA(GroupDataset):
         3: 0,
     }
 
+    labels = {}
+
     def __init__(self, dataset: DeepDataset, config: Config) -> None:
         super().__init__(dataset, config)
 
-        keys = dataset.get_labels_name()
-        values = dataset.get_labels()
-        pass
+        keys = dataset.get_labels()
+        values = dataset.get_labels_name()
+
+        GroupMAFAULDA.labels = dict(zip(keys, values))
 
     @staticmethod
     def _assigne_group(sample: SignalSample) -> int:
-        if sample["metainfo"]["label"] == 13:  # Normal
+        label = sample["metainfo"]["label"]
+        label_str = GroupMAFAULDA.labels[label]
+
+        if label_str == "Normal":
             group = min(GroupMAFAULDA.normal_groups, key=GroupMAFAULDA.normal_groups.get)
             GroupMAFAULDA.normal_groups[group] += 1
             return group
+
         else:
             test_measure = sample['metainfo']['test_measure']
-            pass
+
+            if label_str == "Horizontal Misalignment":
+                if test_measure == "0.5mm":
+                    return 1
+                elif test_measure == "1.0mm":
+                    return 2
+                elif test_measure == "1.5mm":
+                    return 3
+                elif test_measure == "2.0mm":
+                    return 4
+
+            elif label_str == "Vertical Misalignment":
+                if test_measure == "0.51mm" or test_measure == "0.63mm":
+                    return 1
+                elif test_measure == "1.27mm":
+                    return 2
+                elif test_measure == "1.40mm":
+                    return 3
+                elif test_measure == "1.78mm" or test_measure == "1.90mm":
+                    return 4
+
+            elif label_str == "Imbalance":
+                if test_measure == "6g" or test_measure == "10g":
+                    return 1
+                elif test_measure == "15g" or test_measure == "20g":
+                    return 2
+                elif test_measure == "25g" or test_measure == "30g":
+                    return 3
+                elif test_measure == "35g":
+                    return 4
+
+            elif 17 <= label <= 22:  # Bearing
+                if test_measure == "0g":
+                    return 1
+                elif test_measure == "6g":
+                    return 2
+                elif test_measure == "20g":
+                    return 3
+                elif test_measure == "35g":
+                    return 4
+
+        raise Exception("Unexpected sample")
 
 
 class GroupMFPT(GroupDataset):
@@ -136,12 +184,18 @@ class GroupPU(GroupDataset):
 
 
 class GroupUOC(GroupDataset):
+    healthy_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    missing_tooth_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    root_crack_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    spalling_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+
     @staticmethod
     def _assigne_group(sample: SignalSample) -> int:
         severity = sample['metainfo']['severity']
         if severity != "-":
             return int(severity)
         else:
+            # label = sample["metainfo"]["label"]
             pass
 
 
