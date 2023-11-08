@@ -189,14 +189,39 @@ class GroupUOC(GroupDataset):
     root_crack_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     spalling_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 
+    labels = {}
+
+    def __init__(self, dataset: DeepDataset, config: Config) -> None:
+        super().__init__(dataset, config)
+
+        keys = dataset.get_labels()
+        values = dataset.get_labels_name()
+
+        GroupUOC.labels = dict(zip(keys, values))
+
     @staticmethod
     def _assigne_group(sample: SignalSample) -> int:
         severity = sample['metainfo']['severity']
         if severity != "-":
             return int(severity)
         else:
-            # label = sample["metainfo"]["label"]
-            pass
+            label = sample["metainfo"]["label"]
+            label_str = GroupUOC.labels[label]
+
+            if label_str == "Healthy":
+                group_dict = GroupUOC.healthy_groups
+            elif label_str == "Missing Tooth":
+                group_dict = GroupUOC.missing_tooth_groups
+            elif label_str == "Root Crack":
+                group_dict = GroupUOC.root_crack_groups
+            elif label_str == "Spalling":
+                group_dict = GroupUOC.spalling_groups
+            else:
+                raise Exception("Unexpected sample")
+
+            group = min(group_dict, key=group_dict.get)
+            group_dict[group] += 1
+            return group
 
 
 class GroupXJTU(GroupDataset):
