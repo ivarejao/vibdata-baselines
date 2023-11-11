@@ -81,9 +81,72 @@ class GroupEAS(GroupDataset):
 
 
 class GroupIMS(GroupDataset):
+    # Amount of each class in each fold
+    normal = [2094, 0]  # 6280 / 3
+    degraded_outer = [167, 0]  # 500 / 3
+    outer = [23, 0]  # 68 / 3
+    degraded_inner = [200, 0]  # 600 / 3
+    inner = [38, 0]  # 112 / 3
+    degraded_roller = [300, 0]  # 900 / 3
+    roller = [204, 0]  # 612 / 3
+
+    labels = {}
+
+    def __init__(self, dataset: DeepDataset, config: Config) -> None:
+        super().__init__(dataset, config)
+
+        keys = dataset.get_labels()
+        values = dataset.get_labels_name()
+
+        GroupIMS.labels = dict(zip(keys, values))
+
+    @staticmethod
+    def _get_group_divided(group_list: list):
+        group = (group_list[1] // group_list[0] + 1)
+        group_list[1] += 1
+        return group
+
     @staticmethod
     def _assigne_group(sample: SignalSample) -> int:
-        pass
+        bearing = sample['metainfo']['bearing']
+        label = sample['metainfo']['label']
+        label_str = GroupIMS.labels[label]
+
+        if bearing == 1:  # Outer Race
+
+            if label_str == "Degraded Outer Race":
+                return GroupIMS._get_group_divided(GroupIMS.degraded_outer)
+
+            elif label_str == "Outer Race":
+                return GroupIMS._get_group_divided(GroupIMS.outer)
+
+            else:
+                return 1
+
+        elif bearing == 2:  # Normal
+            return GroupIMS._get_group_divided(GroupIMS.normal)
+
+        elif bearing == 3:  # Inner Race
+
+            if label_str == "Degraded Inner Race":
+                return GroupIMS._get_group_divided(GroupIMS.degraded_inner)
+
+            elif label_str == "Inner Race":
+                return GroupIMS._get_group_divided(GroupIMS.inner)
+
+            else:
+                return 2
+
+        elif bearing == 4:  # Roller Race
+
+            if label_str == "Degraded Roller Race":
+                return GroupIMS._get_group_divided(GroupIMS.degraded_roller)
+
+            elif label_str == "Roller Race":
+                return GroupIMS._get_group_divided(GroupIMS.roller)
+
+            else:
+                return 3
 
 
 class GroupMAFAULDA(GroupDataset):
@@ -164,8 +227,8 @@ class GroupMFPT(GroupDataset):
     inner_groups = {1: 0, 2: 0, 3: 0}
 
     # Divisao dos sinais / Quantidade de amostras já atribuidas
-    division_normal = (6, 0)
-    division_outer_270 = (6, 0)
+    division_normal = [6, 0]
+    division_outer_270 = [6, 0]
 
     labels = {}
 
@@ -184,9 +247,9 @@ class GroupMFPT(GroupDataset):
         return group
 
     @staticmethod
-    def _get_group_divided(group_tuple: tuple):
-        group = (group_tuple[1] // group_tuple[0] + 1)
-        group_tuple[1] += 1
+    def _get_group_divided(group_list: tuple):
+        group = (group_list[1] // group_list[0] + 1)
+        group_list[1] += 1
         return group
 
     @staticmethod
