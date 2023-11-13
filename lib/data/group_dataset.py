@@ -223,12 +223,11 @@ class GroupMAFAULDA(GroupDataset):
 
 
 class GroupMFPT(GroupDataset):
-    outer_groups = {1: 0, 2: 0, 3: 0}
-    inner_groups = {1: 0, 2: 0, 3: 0}
 
-    # Divisao dos sinais / Quantidade de amostras já atribuidas
     division_normal = [6, 0]
     division_outer_270 = [6, 0]
+    division_inner = [3, 0]
+    division_outer = [3, 0]
 
     labels = {}
 
@@ -241,16 +240,10 @@ class GroupMFPT(GroupDataset):
         GroupMFPT.labels = dict(zip(keys, values))
 
     @staticmethod
-    def _get_group_balanced(group_dict: dict):
-        group = min(group_dict, key=group_dict.get)
-        group_dict[group] += 1
-        return group
-
-    @staticmethod
-    def _get_group_divided(group_list: tuple):
+    def _get_group_divided(group_list: list):
         group = (group_list[1] // group_list[0] + 1)
         group_list[1] += 1
-        return group
+        return group % 3
 
     @staticmethod
     def _assigne_group(sample: SignalSample) -> int:
@@ -261,7 +254,7 @@ class GroupMFPT(GroupDataset):
             return GroupMFPT._get_group_divided(GroupMFPT.division_normal)
 
         elif label_str == "Inner Race":
-            return GroupMFPT._get_group_balanced(GroupMFPT.inner_groups)
+            return GroupMFPT._get_group_divided(GroupMFPT.division_inner)
 
         elif label_str == "Outer Race":
             load = sample['metainfo']['load']
@@ -269,7 +262,7 @@ class GroupMFPT(GroupDataset):
             if load == 270:
                 return GroupMFPT._get_group_divided(GroupMFPT.division_outer_270)
             else:
-                return GroupMFPT._get_group_balanced(GroupMFPT.outer_groups)
+                return GroupMFPT._get_group_divided(GroupMFPT.division_outer)
 
         else:
             raise Exception("Unexpected sample")
