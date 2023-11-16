@@ -8,12 +8,13 @@ import numpy as np
 import torch
 import pandas as pd
 from torch import nn
-from sklearn.metrics import classification_report, balanced_accuracy_score, f1_score, accuracy_score
+from sklearn.metrics import classification_report, confusion_matrix, balanced_accuracy_score, f1_score, accuracy_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, StratifiedShuffleSplit
 from torch.amp.autocast_mode import autocast
 from torch.cuda.amp.grad_scaler import GradScaler
-
+from matplotlib import pyplot as plt
+import seaborn as sns
 import wandb
 from lib.config import Config
 from lib.sampling import DataSampling
@@ -21,6 +22,9 @@ from utils.report import ReportDict
 from lib.experiment import Experiment
 from lib.models.model import Model
 
+# Test
+from lib.models.vgg_models import VGGish
+from utils.report import array_info
 
 class ExpRunner:
     def __init__(
@@ -30,6 +34,8 @@ class ExpRunner:
         self.config = config
         self.model = None
         self.experiment = experiment
+        self.metrics = []
+        self.fold_distributions = []
         self.data_report = ReportDict(["real_label", "predicted", "fold", "dataset"])
         self.classifier = self.create_rf(self.config["seed"], -2)
         
@@ -81,28 +87,22 @@ class ExpRunner:
         model.to(device)
         model.apply(Model.reset_weights)
         
-        train_loader = self.dataset.get_trainloader()
+        X, y = self.dataset.get_train()
+
+        result = VGGish(channels=1).fit_transform(X, y)
+        
+        unique_elements, counts = np.unique(y, return_counts=True)
+        
+        vggish_passed = "Passed VGGish"
+        print(vggish_passed.center(30, "="))
+        
         test_fold = self.dataset.get_fold()
 
         prefix_log = f"fold:{test_fold}/"
         
-        X = []
-        y = []
-        
-        for i, (inputs, labels) in enumerate(train_loader, 0):
-            inputs = inputs.float().to(device)
-            labels = labels.to(device)
-            # Normalize the labels
-            labels -= self.dataset.get_labels().min()
-            with autocast(device_type="cuda", dtype=torch.float16):
-                # Perform forward pass
-                outputs = model(inputs)
-                X.append(outputs.detach().cpu().numpy())
-                y.append(labels.detach().cpu().numpy())
-
-        X = np.concatenate(X, axis=0)
-        y = np.concatenate(y, axis=0)
         self.classifier.fit(X, y)
+        self.fold_distributions.append(counts)
+        wandb.log({"Class Distribution": wandb.Table(data=self.fold_distributions, columns=list(self.dataset.get_labels_name()))})
         
         training_name = "End of Training"
         print(training_name.center(30, "="))
@@ -111,36 +111,14 @@ class ExpRunner:
     def eval(self):
         print("Testing".center(30, "="))
 
-        test_loader = self.dataset.get_testloader()
-        device = self.config.get_device()
         test_fold = self.dataset.get_fold()
-        
-        model = self.config.get_model()
-        model.to(device=device)
-        model.eval()
-
         macro_output = []
         macro_label = []
 
-        # Disable autograd
-        with torch.no_grad():
-            for batch_id, (data, labels) in enumerate(test_loader):
-                # Move to gpu
-                data = data.float().to(device)
-                labels = labels.to(device)
-                # Normalize labels
-                labels -= self.dataset.get_labels().min()
+        X_test, y_test = self.dataset.get_test() 
 
-                output = model(data)
-                
-                output = self.classifier.predict(output.detach().cpu().numpy())
-                labels += self.dataset.get_labels().min()
-
-                # Moves the report variables into the cpu to not overload the gpu
-                macro_output.append(output)
-                macro_label.append(labels.cpu().numpy())
-
-        data = {"predicted": np.concatenate(macro_output), "real_label": np.concatenate(macro_label)}
+        y_pred = self.classifier.predict(X_test)
+        data = {"predicted": y_pred, "real_label": y_test}
         eval_size = len(data["predicted"])
         # Add the test data into the final report
         self.data_report.update(
@@ -161,6 +139,7 @@ class ExpRunner:
             target_names=self.dataset.get_labels_name(),
             zero_division=0,
         )
+        
         print(class_report)
         bal_acc = balanced_accuracy_score(data["real_label"], data["predicted"]) * 100
         f1_macro = f1_score(data["real_label"], data["predicted"], average='macro') * 100
@@ -169,62 +148,72 @@ class ExpRunner:
         print("\nBalanced Accuracy: {:.3f}%".format(bal_acc))
         print("\nF1 Macro: {:.3f}%".format(f1_macro))
         print("\nAccuracy: {:.3f}%".format(accuracy))
+        
+        # Compute confusion matrix
+        cm = confusion_matrix(data["real_label"], data["predicted"])
+
+        # Normalize the confusion matrix if desired
+        cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+        # Plot the confusion matrix
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm_normalized, annot=True, fmt=".2f", cmap="Blues", cbar=False, xticklabels=self.dataset.get_labels_name(), yticklabels=self.dataset.get_labels_name())
+        plt.xlabel("Predicted Label")
+        plt.ylabel("True Label")
+        plt.title("Confusion Matrix")
+        plt.show()
+        
+        self.metrics.append([bal_acc, f1_macro, accuracy])
+        
+        wandb.log({'Confusion Matrix': wandb.Image(plt),
+                   "Metrics": wandb.Table(data=self.metrics, columns=["Balanced Accuracy", "F1 Macro", "Accuracy"])}) 
+           
         wandb.run.summary[f"{test_fold}_balanced_accuracy"] = bal_acc
         wandb.run.summary[f"{test_fold}_f1_macro"] = f1_macro
         wandb.run.summary[f"{test_fold}_accuracy"] = accuracy
         
-
-    def grid_search_train(self) -> Tuple[int, Dict[str, Any]]:
-        params_grid = self.config["params_grid"]
-        keys = list(params_grid.keys())
-        values = list(params_grid.values())
-
-        optimal_val_loss = sys.maxsize
-        optimal_epoch = 0
-        optimal_params_set = {k: None for k in keys}
-
-        all_combinations = list(itertools.product(*values))
-        num_combinations = len(all_combinations)
-        for i, combination_values in enumerate(all_combinations):
-            # Organize the combination values based on keys
-            combination = {key: value for key, value in zip(keys, combination_values)}
-            # Log the combination used
-            print(" Grid search {}/{} ".format(i + 1, num_combinations).center(30, "="))
-            print("Params:\n" + "\n".join([f"{key} : {value}" for key, value in zip(keys, combination_values)]))
-            # Train the model overriding these params
-            epoch, val_loss = self.train(on_validation=True, **combination)
-            if val_loss < optimal_val_loss:
-                optimal_epoch = epoch
-                optimal_val_loss = val_loss
-                optimal_params_set = combination
-
-        # Print the best parameters found
-        print()
-        print("Best set found".center(30, "-"))
-        print("Epoch: {}".format(optimal_epoch))
-        print("Validation loss: {}".format(optimal_val_loss))
-        print("Params:\n" + "\n".join([f"{key} : {value}" for key, value in optimal_params_set.items()]))
-        wandb.summary["{}_best_val_loss".format(self.dataset.get_fold())] = optimal_val_loss
-
-        return optimal_epoch, optimal_params_set
-
+    
     def finish(self):
         # Save the predicitons
         predictions_path = os.path.join(self.experiment.get_results_dirpath(), "predictions.csv")
-        predicitons = pd.DataFrame(self.data_report)
-        predicitons.to_csv(predictions_path, index=False)
+        predictions = pd.DataFrame(self.data_report)
+        predictions.to_csv(predictions_path, index=False)
 
+        bal_acc = balanced_accuracy_score(predictions["real_label"], predictions["predicted"])
+        f1_macro = f1_score(predictions["real_label"], predictions["predicted"], average="macro")
+        accuracy = accuracy_score(predictions["real_label"], predictions["predicted"])
+        
         # Save predictions in wandb
         wandb.save(predictions_path, policy="now")
 
+        # Compute confusion matrix
+        cm = confusion_matrix(predictions["real_label"], predictions["predicted"])
+
+        # Normalize the confusion matrix if desired
+        cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+        # Plot the confusion matrix
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm_normalized, annot=True, fmt=".2f", cmap="Blues", cbar=False, xticklabels=self.dataset.get_labels_name(), yticklabels=self.dataset.get_labels_name())
+        plt.xlabel("Predicted Label")
+        plt.ylabel("True Label")
+        plt.title("Confusion Matrix")
+        plt.show()
+       
+        wandb.log({'Confusion Matrix Total': wandb.Image(plt),
+                    'Balanced Accuracy': float(bal_acc) * 100,
+                    'F1 Macro': float(f1_macro) * 100,
+                    'Accuracy': float(accuracy) * 100
+                })
+        
         wandb.run.summary["total_balanced_accuracy"] = (
-            balanced_accuracy_score(predicitons["real_label"], predicitons["predicted"]) * 100
+            bal_acc * 100
         )
         wandb.run.summary["total_f1"] = (
-            f1_score(predicitons["real_label"], predicitons["predicted"], average="macro") * 100
+            f1_macro * 100
         )
         wandb.run.summary["total_accuracy"] = (
-            accuracy_score(predicitons["real_label"], predicitons["predicted"]) * 100
+            accuracy * 100
         )
 
     @staticmethod

@@ -17,10 +17,14 @@ class Config:
         # Override the configuration with the cli args
         if args:
             self.args = args
+            # self.config["epochs"] = self.config["epochs"] if args.epochs is None else self.args.epochs
+            # self.config["optimizer"]["parameters"]["lr"] = (
+            #    self.config["optimizer"]["parameters"]["lr"] if args.lr is None else self.args.lr
+            #)
             self.config["dataset"]["name"] = (
                 self.config["dataset"]["name"] if args.dataset is None else self.args.dataset
             )
-            self.config["batch_size"] = self.config["batch_size"]
+
         self.setup_model()
 
     def load(self, path):
@@ -79,19 +83,11 @@ class Config:
         else:
             device = torch.device("cpu")
         return device
-    
-        # Freeze the layers you want to keep fixed
-    def __freeze_layers(self, model):
-        for name, param in model.named_parameters():
-            param.requires_grad = False
-        
-        print("Freezed Weights OK")
-        return model
-    
+
     def get_model(self, **kwargs) -> torch.nn.Module:
         # Besides the default parameters given when Config is instantiated, these can be override, passing as kwargs
         # into this method
-        return self.__freeze_layers(self.model_constructor.new(**kwargs))
+        return self.model_constructor.new(**kwargs)
 
     def get_dataset(self):
         dataset_name = self.config["dataset"]["name"]

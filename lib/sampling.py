@@ -79,6 +79,25 @@ class DataSampling:
             subset, batch_sampler=subset_sampler, worker_init_fn=self.seed_worker, generator=self.generator
         )
 
+    def get_train(self):
+        return self._get_data(np.concatenate((self.train_ids, self.val_ids), axis=0))
+    
+    def get_test(self):
+        return self._get_data(self.test_ids)
+    
+    def _get_data(self, samples_ids):
+        subset = Subset(self.dataset, samples_ids)
+        num_samples = len(subset)
+        X = []
+        y = []
+        
+        for i in range(num_samples):
+            sample = subset[i]
+        
+            X.append(sample[0])
+            y.append(sample[1])
+        return np.concatenate(X), np.array(y)
+    
     # Getter and Setters
     def get_labels(self) -> npt.NDArray[np.int_]:
         return self.labels
