@@ -49,6 +49,7 @@ class DataSampling:
             self.val_ids = self.folds[val_fold]
         else:
             val_fold = test_fold
+            
         # Set the remaining folds to training
         train_folds = set(range(num_folds)).difference(set([test_fold, val_fold]))
         self.train_ids = np.concatenate([self.folds[i] for i in train_folds])
@@ -56,16 +57,13 @@ class DataSampling:
         # Set the flag
         self.initialized = True
 
+        return self.train_ids, self.val_ids, self.test_ids
+    
     def is_initialized(self) -> bool:
         return self.initialized
 
     def get_trainloader(self) -> DataLoader:
-        return self._get_dataloader(self.train_ids)
-
-    def get_valloader(self) -> DataLoader:
-        if not hasattr(self, "val_ids"):
-            raise ValueError("The validation wasnt set at this split")
-        return self._get_dataloader(self.val_ids)
+        return self._get_dataloader(np.concatenate((self.train_ids, self.val_ids), axis=0))
 
     def get_testloader(self) -> DataLoader:
         return self._get_dataloader(self.test_ids)

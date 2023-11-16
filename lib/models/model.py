@@ -7,7 +7,7 @@ from tsai.models.XResNet1d import xresnet1d18
 from .M5 import M5
 from .Resnet1d import resnet18, resnet34
 from .Alexnet1d import alexnet
-
+from .VGGish import VGGish
 models = {
     "alexnet": alexnet,
     "resnet18": resnet18,
@@ -16,6 +16,7 @@ models = {
     "xresnet18": xresnet1d18,
     "m5": M5,
     "resnet18-tsai": ResNet,
+    "vggish": VGGish
 }
 
 
