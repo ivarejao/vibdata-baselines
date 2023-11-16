@@ -84,7 +84,6 @@ class Experiment:
             project=os.environ["WANDB_PROJECT"],
             # Track essentials hyperparameters and run metadata
             config={
-                "batch_size": self.cfg["batch_size"],
                 "learning_rate": self.cfg["optimizer"]["parameters"]["lr"],
                 "weight_decay": self.cfg["optimizer"]["parameters"]["weight_decay"],
                 "epochs": self.cfg["epochs"],
