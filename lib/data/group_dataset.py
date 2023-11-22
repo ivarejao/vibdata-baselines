@@ -89,6 +89,7 @@ class GroupIMS(GroupDataset):
     inner = [38, 0]  # 112 / 3
     degraded_roller = [300, 0]  # 900 / 3
     roller = [204, 0]  # 612 / 3
+    normal_remaining = [3531, 0] # 10592 / 3
 
     labels = {}
 
@@ -109,44 +110,40 @@ class GroupIMS(GroupDataset):
     @staticmethod
     def _assigne_group(sample: SignalSample) -> int:
         bearing = sample['metainfo']['bearing']
+        test = sample['metainfo']['test']
         label = sample['metainfo']['label']
         label_str = GroupIMS.labels[label]
 
-        if bearing == 1:  # Outer Race
+        if test == 1:
+            if bearing == 3:
 
-            if label_str == "Degraded Outer Race":
-                return GroupIMS._get_group_divided(GroupIMS.degraded_outer)
+                if label_str == "Inner Race":
+                    return GroupIMS._get_group_divided(GroupIMS.inner)
+                elif label_str == "Degraded Inner Race":
+                    return GroupIMS._get_group_divided(GroupIMS.degraded_inner)
+                elif label_str == "Normal":
+                    return 1
 
-            elif label_str == "Outer Race":
-                return GroupIMS._get_group_divided(GroupIMS.outer)
+            elif bearing == 4:
 
-            else:
-                return 1
+                if label_str == "Roller Race":
+                    return GroupIMS._get_group_divided(GroupIMS.roller)
+                elif label_str == "Degraded Roller Race":
+                    return GroupIMS._get_group_divided(GroupIMS.degraded_roller)
+                elif label_str == "Normal":
+                    return 2
 
-        elif bearing == 2:  # Normal
-            return GroupIMS._get_group_divided(GroupIMS.normal)
+        elif test == 2:
+            if bearing == 1:
 
-        elif bearing == 3:  # Inner Race
+                if label_str == "Outer Race":
+                    return GroupIMS._get_group_divided(GroupIMS.outer)
+                elif label_str == "Degraded Outer Race":
+                    return GroupIMS._get_group_divided(GroupIMS.degraded_outer)
+                elif label_str == "Normal":
+                    return 3
 
-            if label_str == "Degraded Inner Race":
-                return GroupIMS._get_group_divided(GroupIMS.degraded_inner)
-
-            elif label_str == "Inner Race":
-                return GroupIMS._get_group_divided(GroupIMS.inner)
-
-            else:
-                return 2
-
-        elif bearing == 4:  # Roller Race
-
-            if label_str == "Degraded Roller Race":
-                return GroupIMS._get_group_divided(GroupIMS.degraded_roller)
-
-            elif label_str == "Roller Race":
-                return GroupIMS._get_group_divided(GroupIMS.roller)
-
-            else:
-                return 3
+        return GroupIMS._get_group_divided(GroupIMS.normal_remaining)
 
 
 class GroupMAFAULDA(GroupDataset):
@@ -223,7 +220,6 @@ class GroupMAFAULDA(GroupDataset):
 
 
 class GroupMFPT(GroupDataset):
-
     division_normal = [6, 0]
     division_outer_270 = [6, 0]
     division_inner = [3, 0]
