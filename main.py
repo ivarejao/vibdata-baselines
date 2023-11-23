@@ -1,5 +1,9 @@
+import os
+from pathlib import Path
 from argparse import Namespace, ArgumentParser
 from datetime import datetime
+
+import numpy as np
 
 from lib.config import Config
 from lib.runner import ExpRunner
@@ -14,8 +18,17 @@ def parse_args() -> Namespace:
     parser.add_argument("--epochs", help="Number of epochs", type=int)
     parser.add_argument("--batch-size", help="Size of minibatching", type=int)
     parser.add_argument("--lr", help="Learning rate", type=float)
-    parser.add_argument("--pretrained", help="Pretrained", action="store_true")
     parser.add_argument("--dataset", help="The dataset name")
+    test_group = parser.add_argument_group(
+        "Testing model", "These arguments should be setted when the goal is to test a specific model"
+    )
+    test_group.add_argument("--test", help="If the script should only test the model", action="store_true")
+    test_group.add_argument(
+        "--model-dir",
+        default=None,
+        type=str,
+        help="The path to the directory where the models files are stored, e.g (`best_model_{fold}*.pt`)",
+    )
     args = parser.parse_args()
     return args
 
@@ -29,6 +42,7 @@ def header_log(test_fold: int):
 def main():
     start_time = datetime.now()
     args = parse_args()
+    test = args.test
     exp = Experiment(args.run)
 
     cfg_path = args.cfg
@@ -41,20 +55,31 @@ def main():
     dataset = cfg.get_dataset()
     data_sampling = DataSampling(dataset, cfg)
 
+    # If only need to test, list the models directory obtaining the models name for each fold
+    if test:
+        model_dir = Path(args.model_dir)
+        models_paths = set(
+            [str(model_dir / f.name) for f in model_dir.iterdir() if f.is_file() and ("best_model" in f.name)],
+        )
+
     runner = ExpRunner(data_sampling, cfg, exp)
     for test_fold in range(data_sampling.get_num_folds()):
         header_log(test_fold)
         # Allocate the test, val and train set based on the folds
         data_sampling.split(test_fold=test_fold, with_val_set=True)
-        # Train the model with validation in order to find the best epoch
-        best_epoch, best_params = runner.grid_search_train()
-        # After finding the best epoch train with both training set and validation set until
-        # the best epoch found
-        data_sampling.split(test_fold=test_fold, with_val_set=False)
-        runner.train(max_epochs=best_epoch, **best_params)
-        # runner.train(max_epochs=best_epoch)
-        # Test with the model trained with both training and validation sets
-        runner.eval(epoch=best_epoch)
+        if test:
+            model_path = [path for path in models_paths if "best_model_fold_{:02d}".format(test_fold) in path][0]
+            runner.eval(model_fname=model_path, complete_path=True)
+        else:
+            # Train the model with validation in order to find the best epoch
+            best_epoch, best_params = runner.grid_search_train()
+            # After finding the best epoch train with both training set and validation set until
+            # the best epoch found
+            data_sampling.split(test_fold=test_fold, with_val_set=False)
+            runner.train(max_epochs=best_epoch, **best_params)
+            # Test with the model trained with both training and validation sets
+            model_fname = "best_model_fold_{:02d}_epochs_{:03d}.pt".format(test_fold, best_epoch)
+            runner.eval(model_fname=model_fname)
 
     runner.finish()
 

@@ -109,12 +109,11 @@ class ExpRunner:
 
             log_message = f"[{epoch : 3d}] train_loss: {train_loss:5.3f} "
 
-            self.experiment.save_state(
-                test_fold, epoch, model, optimizer, schedulers, file_name="model_train_fold_{:02d}.pt".format(test_fold)
-            )
+            model_fname = "model_train_fold_{:02d}.pt".format(test_fold)
+            self.experiment.save_state(test_fold, epoch, model, optimizer, schedulers, file_name=model_fname)
 
             if on_validation:
-                val_loss = self.eval(epoch, on_validation=True)
+                val_loss = self.eval(model_fname, on_validation=True)
 
                 wandb_metrics_log.update({f"{prefix_log}val_loss": val_loss})
                 log_message += f"| val_loss: {val_loss:5.3f}"
@@ -148,7 +147,7 @@ class ExpRunner:
             ret = (max_epochs, None)
         return ret
 
-    def eval(self, epoch, on_validation=False) -> None:
+    def eval(self, model_fname: str, on_validation: bool = False, complete_path: bool = False) -> None:
         if not on_validation:
             print("Testing".center(30, "="))
 
@@ -156,15 +155,17 @@ class ExpRunner:
         evalloader = self.dataset.get_valloader() if on_validation else self.dataset.get_testloader()
         device = self.config.get_device()
         test_fold = self.dataset.get_fold()
-        # Get the path of the model to be loaded
-        if on_validation:
-            model_fname = "model_train_fold_{:02d}.pt".format(test_fold)
-        else:
-            model_fname = "best_model_fold_{:02d}_epochs_{:03d}.pt".format(test_fold, epoch)
-            # TODO: Improve the logging
-            print("Loading model {}".format(model_fname))
+        # Get the path of the model to be loaded if not already setted
+        # if on_validation:
+        #     model_fname = "model_train_fold_{:02d}.pt".format(test_fold)
+        # else:
+        #     model_fname = "best_model_fold_{:02d}_epochs_{:03d}.pt".format(test_fold, epoch)
+        model_path = model_fname if complete_path else self.experiment.get_model_path(file_name=model_fname)
+
+        # TODO: Improve the logging
+        if not on_validation:
+            print("Loading model {}".format(model_path))
         # Load the model
-        model_path = self.experiment.get_model_path(file_name=model_fname)
         model = self.config.get_model()
         model.to(device=device)
         model.load_state_dict(self.experiment.get_model_state(model_path))
