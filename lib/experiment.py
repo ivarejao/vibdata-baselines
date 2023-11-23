@@ -54,6 +54,7 @@ class Experiment:
         if file_name is None:
             file_name = "model_fold_{:02d}_epochs_{:04d}.pt".format(fold, epoch)
         train_state_path = os.path.join(self.models_dirpath, file_name)
+        # TODO:  add some hyperparameters into the state
         torch.save(
             {
                 "fold": fold,
