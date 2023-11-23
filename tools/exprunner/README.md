@@ -31,7 +31,7 @@ Ensure that the host has an internet connection by logging into `pppoedi`.
 
 ### 4. Virtual enviroment creation
 
-Create a virtual enviroment and install requirements in `tools/requirements.txt`
+Create a virtual enviroment and install requirements in 
 
 ## Running Experiments
 

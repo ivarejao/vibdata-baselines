@@ -3,7 +3,7 @@ import random
 import numpy as np
 import torch
 import numpy.typing as npt
-from torch.utils.data import Subset, Dataset, DataLoader
+from torch.utils.data import Subset, Dataset, DataLoader, BatchSampler, SequentialSampler
 from sklearn.model_selection import LeaveOneGroupOut
 
 import lib.data.group_dataset as groups_module
@@ -68,15 +68,21 @@ class DataSampling:
         return self._get_dataloader(self.val_ids)
 
     def get_testloader(self) -> DataLoader:
-        return self._get_dataloader(self.test_ids)
+        return self._get_dataloader(self.test_ids, test=True)
 
-    def _get_dataloader(self, samples_ids) -> DataLoader:
+    def _get_dataloader(self, samples_ids, test: bool = False) -> DataLoader:
         subset = Subset(self.dataset, samples_ids)
-        subset_sampler = BalancedBatchSampler(
-            labels=self.arange_labels(subset),
-            n_classes=len(self.labels),
-            n_samples=int(self.config["batch_size"] / len(self.labels)),
-        )
+        if test:
+            # TODO: Check how the sampler should behaviour in this case
+            subset_sampler = BatchSampler(
+                sampler=SequentialSampler(subset), batch_size=self.config["batch_size"], drop_last=False
+            )
+        else:
+            subset_sampler = BalancedBatchSampler(
+                labels=self.arange_labels(subset),
+                n_classes=len(self.labels),
+                n_samples=int(self.config["batch_size"] / len(self.labels)),
+            )
         return DataLoader(
             subset, batch_sampler=subset_sampler, worker_init_fn=self.seed_worker, generator=self.generator
         )
