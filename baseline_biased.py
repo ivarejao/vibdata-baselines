@@ -12,6 +12,7 @@ from sklearn.metrics import classification_report, balanced_accuracy_score
 from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_val_predict
 from tqdm import tqdm
 from vibdata.deep.DeepDataset import DeepDataset
+import lib.data.group_dataset as groups_module
 
 from lib.config import Config
 
@@ -76,12 +77,13 @@ def extract_features(dataset: DeepDataset) -> (List[int], List[int]):
     return X, y
 
 
-def classifier_biased(cfg: Config, inputs: List[int], labels: List[int]) -> List[int]:
-    model = RandomForestClassifier()
-
+def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], num_folds: int) -> List[int]:
+    seed = cfg['seed']
     parameters = cfg['params_grid']
 
-    cv_outer = StratifiedKFold(n_splits=5, shuffle=True)
+    model = RandomForestClassifier(random_state=seed)
+
+    cv_outer = StratifiedKFold(n_splits=num_folds, shuffle=True)
     cv_inner = StratifiedKFold(n_splits=3)
 
     clf = GridSearchCV(estimator=model, param_grid=parameters, cv=cv_inner, n_jobs=-1)
@@ -122,8 +124,13 @@ def main():
     configure_wandb(dataset_name, cfg, cfg_path)
 
     dataset = cfg.get_dataset()
+
+    group_obj = getattr(groups_module, "Group" + dataset_name)(dataset=dataset, config=cfg)
+    groups = group_obj.groups()
+    num_folds = len(set([fold for fold in groups]))
+
     X, y = extract_features(dataset)
-    y_pred = classifier_biased(cfg, X, y)
+    y_pred = classifier_biased(cfg, X, y, num_folds)
 
     results(dataset, y, y_pred)
 
