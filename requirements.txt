@@ -1,11 +1,16 @@
 numpy==1.25.0
 pandas==1.5.3
 python-dotenv==1.0.0
-PyYAML==6.0.1
+PyYAML>=6.0
 scikit_learn==1.2.2
-torch==1.13.1
+torch>=2.0.1
 tqdm==4.65.0
 tsai==0.3.7
-wandb==0.15.2
+wandb>=0.15.12
 xgboost==1.7.6
 vibdata @ git+https://gitlab.com/ninfa-ufes/deep-rpdbcs/signal-datasets.git@e889f36eab3c016a9ab3c6dfb40ee85baa25e208
+
+vibdata>=0.7.1
+scikit-learn>=1.2.2
+essentia>=2.1b6.dev1110
+scipy>=1.11.1

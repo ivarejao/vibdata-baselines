@@ -1,8 +1,11 @@
+import os
 from argparse import ArgumentParser, Namespace
 from typing import List
 
 import essentia.standard
 import numpy as np
+import wandb
+from dotenv import load_dotenv
 from scipy.stats import kurtosis
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, balanced_accuracy_score
@@ -92,10 +95,31 @@ def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int]) -> None:
     print(f'Balanced accuracy: {balanced_accuracy_score(y_true, y_pred):.2f}')
 
 
+def configure_wandb(run_name: str, cfg: Config, cfg_path: str) -> None:
+    wandb.login(key=os.environ["WANDB_KEY"])
+    wandb.init(
+        # Set the project where this run will be logged
+        project=os.environ["WANDB_PROJECT"],
+        # Track essentials hyperparameters and run metadata
+        config={
+            "arquitecture": cfg["model"]["name"],
+            "params_grid": cfg["params_grid"]
+        },
+        # Set the name of the experiment
+        name=run_name,
+    )
+    # Add configuration file into the wandb log
+    wandb.save(cfg_path, policy="now")
+
+
 def main():
+    load_dotenv()
     args = parse_args()
     cfg_path = args.cfg
     cfg = Config(cfg_path, args=args)
+
+    dataset_name = cfg['dataset']['name']
+    configure_wandb(dataset_name, cfg, cfg_path)
 
     dataset = cfg.get_dataset()
     X, y = extract_features(dataset)
