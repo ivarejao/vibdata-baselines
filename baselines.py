@@ -127,7 +127,7 @@ def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int]) -> None:
     print(f'Balanced accuracy: {balanced_accuracy_score(y_true, y_pred):.2f}')
 
 
-def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int]) -> None:
+def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int], args) -> None:
     wandb.login(key=os.environ["WANDB_KEY"])
     wandb.init(
         # Set the project where this run will be logged
@@ -136,7 +136,9 @@ def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int]
         config={
             "model": cfg["model"]["name"],
             "folds": folds_by_groups(groups),
-            "params_grid": cfg["params_grid"]
+            "params_grid": cfg["params_grid"],
+            "biased": args.biased,
+            "unbiased": args.unbiased
         },
         # Set the name of the experiment
         name=run_name,
@@ -157,7 +159,7 @@ def main():
     group_obj = getattr(groups_module, "Group" + dataset_name)(dataset=dataset, config=cfg)
     groups = group_obj.groups()
 
-    configure_wandb(dataset_name, cfg, cfg_path, groups)
+    configure_wandb(dataset_name, cfg, cfg_path, groups, args)
 
     X, y = extract_features(dataset)
 
