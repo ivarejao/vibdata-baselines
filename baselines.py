@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from scipy.stats import kurtosis
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, balanced_accuracy_score
-from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_val_predict, GroupKFold
+from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_val_predict, LeaveOneGroupOut
 from tqdm import tqdm
 from vibdata.deep.DeepDataset import DeepDataset
 
@@ -93,10 +93,12 @@ def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups:
 
     model = RandomForestClassifier(random_state=seed)
 
-    cv_outer = StratifiedKFold(n_splits=num_folds, shuffle=True)
-    cv_inner = StratifiedKFold(n_splits=3)
+    cv_outer = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)
+    cv_inner = StratifiedKFold(n_splits=3, shuffle=True, random_state=seed)
 
-    clf = GridSearchCV(estimator=model, param_grid=parameters, cv=cv_inner, n_jobs=-1)
+    clf = GridSearchCV(estimator=model, param_grid=parameters, scoring="balanced_accuracy",
+                       cv=cv_inner, n_jobs=-1)
+
     y_pred = cross_val_predict(clf, inputs, labels, cv=cv_outer)
 
     return y_pred
@@ -106,15 +108,15 @@ def classifier_unbiased(cfg: Config, inputs: List[int], labels: List[int], group
     seed = cfg['seed']
     parameters = cfg['params_grid']
 
-    num_folds = folds_by_groups(groups)
-
     model = RandomForestClassifier(random_state=seed)
 
-    cv = GroupKFold(n_splits=num_folds).split(inputs, labels, groups)
-    cv_inner = StratifiedKFold(n_splits=3)
+    cv_inner = LeaveOneGroupOut()
+    clf = GridSearchCV(estimator=model, param_grid=parameters, scoring="balanced_accuracy",
+                       cv=cv_inner, n_jobs=-1)
 
-    clf = GridSearchCV(estimator=model, param_grid=parameters, cv=cv_inner, n_jobs=-1)
-    y_pred = cross_val_predict(estimator=clf, X=inputs, y=labels, cv=cv)
+    cv_outer = LeaveOneGroupOut()
+    y_pred = cross_val_predict(clf, inputs, labels, groups=groups, cv=cv_outer,
+                               fit_params={"groups": groups})
 
     return y_pred
 
