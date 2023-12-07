@@ -8,4 +8,4 @@ tqdm==4.65.0
 tsai==0.3.7
 wandb==0.15.2
 xgboost==1.7.6
-vibdata @ git+https://gitlab.com/ninfa-ufes/deep-rpdbcs/signal-datasets.git@e889f36eab3c016a9ab3c6dfb40ee85baa25e208
+vibdata @ git+https://gitlab.com/ninfa-ufes/deep-rpdbcs/signal-datasets.git

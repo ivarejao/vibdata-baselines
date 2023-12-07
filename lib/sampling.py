@@ -96,7 +96,7 @@ class DataSampling:
         
             X.append(sample[0])
             y.append(sample[1])
-        return np.concatenate(X), np.array(y)
+        return X, np.array(y)
     
     # Getter and Setters
     def get_labels(self) -> npt.NDArray[np.int_]:

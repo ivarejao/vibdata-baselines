@@ -33,12 +33,13 @@ dataset:
       - name: SplitSampleRate
         parameters:
           on_field: signal
-      - name: NormalizeSampleRate
-        parameters:
-          sample_rate: 97656
       - name: StandardScaler
         parameters: 
           on_field: signal
+      - name: Spectrogram
+        parameters:
+          mode: "psd"
+
 params_grid:
   lr: [0.01, 0.001, 0.0003]
 

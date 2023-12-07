@@ -123,13 +123,7 @@ def _signal_to_image(array, entry):
         sample_frequencies = sample_frequencies[1:]
         spectro = 2 * spectro[1:]
 
-        mask = (sample_frequencies > 0.8) & (sample_frequencies < 130)
-        norm_factor = unit_conversion_factor(SensorUnit.volt, 100.0) / (2 * np.pi)
-
-        spectro *= norm_factor / sample_frequencies[:, np.newaxis]
-        spectro = np.clip(spectro, 0.0, 1.0)
-
-        spectrogram_image = spectro[mask]
+        spectrogram_image = spectro
         spectrogram_image = cv.resize(spectrogram_image, [96, 64])
 
         return spectrogram_image
@@ -143,4 +137,7 @@ def to_spectrogram(array):
         images.append(image)
  
     images = np.expand_dims(np.array(images), axis=1)
-    return torch.tensor(np.array(images)).to(array.device)
+    return torch.tensor(np.array(images))
+
+def resize(spectrogram_image, shape):
+    return cv.resize(spectrogram_image, shape)

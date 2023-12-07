@@ -87,11 +87,11 @@ class ExpRunner:
         model.to(device)
         model.apply(Model.reset_weights)
         
-        X, y = self.dataset.get_train()
+        X_train, y_train = self.dataset.get_train()
 
-        result = VGGish(channels=1).fit_transform(X, y)
+        X_train = VGGish(channels=1).fit_transform(X_train, y_train)
         
-        unique_elements, counts = np.unique(y, return_counts=True)
+        unique_elements, counts = np.unique(y_train, return_counts=True)
         
         vggish_passed = "Passed VGGish"
         print(vggish_passed.center(30, "="))
@@ -100,13 +100,13 @@ class ExpRunner:
 
         prefix_log = f"fold:{test_fold}/"
         
-        self.classifier.fit(X, y)
+        self.classifier.fit(X_train, y_train)
         self.fold_distributions.append(counts)
         wandb.log({"Class Distribution": wandb.Table(data=self.fold_distributions, columns=list(self.dataset.get_labels_name()))})
         
         training_name = "End of Training"
         print(training_name.center(30, "="))
-        return (X, y)
+        return (X_train, y_train)
 
     def eval(self):
         print("Testing".center(30, "="))
@@ -117,7 +117,9 @@ class ExpRunner:
 
         X_test, y_test = self.dataset.get_test() 
 
+        X_test = VGGish(channels=1).fit_transform(X_test, y_test)
         y_pred = self.classifier.predict(X_test)
+        
         data = {"predicted": y_pred, "real_label": y_test}
         eval_size = len(data["predicted"])
         # Add the test data into the final report
@@ -183,6 +185,17 @@ class ExpRunner:
         f1_macro = f1_score(predictions["real_label"], predictions["predicted"], average="macro")
         accuracy = accuracy_score(predictions["real_label"], predictions["predicted"])
         
+        print("End Summary".center(30, "="))
+        class_report = classification_report(
+            predictions["real_label"],
+            predictions["predicted"],
+            target_names=self.dataset.get_labels_name(),
+            zero_division=0,
+        )
+        print(class_report)
+        print("\nBalanced Accuracy: {:.3f}%".format(bal_acc))
+        print("\nF1 Macro: {:.3f}%".format(f1_macro))
+        print("\nAccuracy: {:.3f}%".format(accuracy))
         # Save predictions in wandb
         wandb.save(predictions_path, policy="now")
 
