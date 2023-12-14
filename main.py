@@ -29,6 +29,11 @@ def parse_args() -> Namespace:
         type=str,
         help="The path to the directory where the models files are stored, e.g (`best_model_{fold}*.pt`)",
     )
+
+    classifier = parser.add_mutually_exclusive_group(required=True)
+    classifier.add_argument('--biased', help='Use biased classifier', action='store_true')
+    classifier.add_argument('--unbiased', help='Use unbiased classifier', action='store_true')
+
     args = parser.parse_args()
     return args
 
@@ -53,7 +58,7 @@ def main():
     exp.configure_wandb(args.run)
     # Load dataset and datasampling
     dataset = cfg.get_dataset()
-    data_sampling = DataSampling(dataset, cfg)
+    data_sampling = DataSampling(dataset, cfg, args)
 
     # If only need to test, list the models directory obtaining the models name for each fold
     if test:

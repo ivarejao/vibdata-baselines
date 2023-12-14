@@ -1,10 +1,11 @@
 import random
+from argparse import Namespace
 
 import numpy as np
 import torch
 import numpy.typing as npt
 from torch.utils.data import Subset, Dataset, DataLoader, BatchSampler, SequentialSampler
-from sklearn.model_selection import LeaveOneGroupOut
+from sklearn.model_selection import LeaveOneGroupOut, StratifiedKFold
 
 import lib.data.group_dataset as groups_module
 from lib.config import Config
@@ -13,16 +14,28 @@ from utils.MemeDataset import MemeDataset
 
 
 class DataSampling:
-    def __init__(self, original_dataset: Dataset, config: Config) -> None:
-        # Define the folds
-        logo = LeaveOneGroupOut()
+    def __init__(self, original_dataset: Dataset, config: Config, args: Namespace) -> None:
 
-        group_obj = getattr(groups_module, "Group" + config["dataset"]["name"])(dataset=original_dataset, config=config)
+        group_obj = getattr(groups_module, "Group" + config["dataset"]["name"])(dataset=original_dataset,
+                                                                                config=config)
         groups = group_obj.groups()
 
         self.dataset = MemeDataset(original_dataset)
-        # Split the dataset into folds based on a conditon
-        self.folds = [fold_ids for _, fold_ids in logo.split(self.dataset, groups=groups)]
+
+        # Define the folds
+        if args.biased:
+            num_folds = len(set(groups))
+            stratKFold = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=config['seed'])
+            X, y = zip(*self.dataset)
+            self.folds = [fold_ids for _, fold_ids in stratKFold.split(X=X, y=y)]
+
+        elif args.unbiased:
+            logo = LeaveOneGroupOut()
+            # Split the dataset into folds based on a conditon
+            self.folds = [fold_ids for _, fold_ids in logo.split(self.dataset, groups=groups)]
+
+        else:
+            raise Exception("Classifier ( Biased / Unbiased ) Undefined")
 
         # TODO: Reimplement these methods `get_labels` and `get_labels_name`
         # calling the respective methods directly from MemeDataset as it will
