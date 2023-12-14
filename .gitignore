@@ -7,3 +7,6 @@ __pycache__/
 .ipynb_checkpoints/
 output/
 .vscode/
+.env
+.idea
+UNKNOWN.egg-info
