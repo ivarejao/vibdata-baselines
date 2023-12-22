@@ -12,6 +12,7 @@ from sklearn.metrics import classification_report, balanced_accuracy_score
 from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_val_predict, LeaveOneGroupOut
 from tqdm import tqdm
 from vibdata.deep.DeepDataset import DeepDataset
+from vibdata.deep.signal.transforms import *
 
 import lib.data.group_dataset as groups_module
 from lib.config import Config
@@ -29,58 +30,16 @@ def parse_args() -> Namespace:
     return args
 
 
-def folds_by_groups(groups: List[int]) -> int:
-    return len(set([fold for fold in groups]))
-
-
-def extract_features(dataset: DeepDataset) -> (List[int], List[int]):
+def get_features(dataset: DeepDataset) -> (List[int], List[int]):
     X = np.empty([len(dataset), 9])
     y = np.empty([len(dataset)], dtype=np.int8)
 
-    for i, sample in tqdm(enumerate(dataset), desc="Extracting features", unit="samples"):
-
-        signal = sample['signal'][0]
-
-        sampleRate32 = sample['metainfo']['sample_rate'].astype('float32')
-        signal32 = signal.astype('float32')
-
-        envelope = essentia.standard.Envelope(sampleRate=sampleRate32, applyRectification=False)
-        signal_envelope = envelope(signal32)
-
-        # Kurtosis
-        X[i][0] = kurtosis(signal)
-
-        # Root Mean Square (RMS)
-        X[i][1] = np.sqrt(sum(np.square(signal)) / len(signal))
-
-        # Standard Deviation
-        X[i][2] = np.std(signal)
-
-        # Mean
-        X[i][3] = np.mean(signal)
-
-        # Log Attack Time
-        logAttackTime = essentia.standard.LogAttackTime(sampleRate=sampleRate32)
-        X[i][4] = logAttackTime(signal_envelope)[0]
-
-        # Temporal Decrease
-        decrease = essentia.standard.Decrease(range=((len(signal32) - 1) / sampleRate32))
-        X[i][5] = decrease(signal32)
-
-        # Temporal Centroid
-        centroid = essentia.standard.Centroid(range=((len(signal32) - 1) / sampleRate32))
-        X[i][6] = centroid(signal_envelope)
-
-        # Effective Duration
-        effective = essentia.standard.EffectiveDuration(sampleRate=sampleRate32)
-        X[i][7] = effective(signal_envelope)
-
-        # Zero Crossing Rate
-        zeroCrossingRate = essentia.standard.ZeroCrossingRate()
-        X[i][8] = zeroCrossingRate(signal32)
-
-        # Labels (Targets)
-        y[i] = sample['metainfo']['label']
+    for i, sample in enumerate(dataset):
+        features = []
+        for feature in sample['features'].values():
+            features.append(feature)
+        X[i] = features
+        y[i] = sample['metainfo']['label'].iloc[0]
 
     return X, y
 
@@ -89,7 +48,7 @@ def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups:
     seed = cfg['seed']
     parameters = cfg['params_grid']
 
-    num_folds = folds_by_groups(groups)
+    num_folds = len(set(groups))
 
     model = RandomForestClassifier(random_state=seed)
 
@@ -137,7 +96,7 @@ def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int]
         # Track essentials hyperparameters and run metadata
         config={
             "model": cfg["model"]["name"],
-            "folds": folds_by_groups(groups),
+            "folds": len(set(groups)),
             "params_grid": cfg["params_grid"],
             "biased": args.biased,
             "unbiased": args.unbiased
@@ -163,7 +122,7 @@ def main():
 
     configure_wandb(dataset_name, cfg, cfg_path, groups, args)
 
-    X, y = extract_features(dataset)
+    X, y = get_features(dataset)
 
     if args.biased:
         y_pred = classifier_biased(cfg, X, y, groups)

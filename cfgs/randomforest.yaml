@@ -5,7 +5,7 @@ model:
   parameters:
     out_channel: 4
 dataset:
-  name: MFPT
+  name: CWRU
   groups_dir: "data/groups"
   raw:
     root: "data/raw_datasets"
@@ -15,6 +15,9 @@ dataset:
       - name: SplitSampleRate
         parameters:
           on_field: signal
+      - name: FeatureExtractor
+        parameters:
+          features: ["Kurtosis", "RootMeanSquare", "StandardDeviation", "Mean", "LogAttackTime", "TemporalDecrease", "TemporalCentroid", "EffectiveDuration", "ZeroCrossingRate"]
       - name: StandardScaler
         parameters:
           on_field: signal
