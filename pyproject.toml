@@ -1,32 +1,31 @@
-[tool.isort]
-# Add custom sections
-#known_pandas=pandas,numpy
-#known_ai=sklearn,torch
-#sections=FUTURE,STDLIB,THIRDPARTY,PANDAS,AI,FIRSTPARTY,LOCALFOLDER
-# Add heading to importants sections
-#import_heading_ai="Artificial Intelligence"
-#import_heading_pandas="Pandas"
-#import_heading_firstparty="Custom libs"
-# Sort by the lenght
-length_sort=true
-profile="black"
-multi_line_output=5
-line_length=120
-use_parentheses=true
-
-[tool.black]
-line-length=120
-target-version=['py310']
-#include='*.py'
-# Remember that black already picks the .gitingore files and ignore them
+[tool.poetry]
+name = "vibnet"
+version = "0.1.0"
+description = "Vibnet"
+authors = []
 
 [tool.poetry.dependencies]
-python = ">=3.10, <3.11"
-numpy = "1.25.0"
-pandas = "1.5.3"
-PyYAML = "6.0"
-scikit_learn = "1.3.0"
-torch = "1.13.1"
-wandb = "0.15.2"
-xgboost = "1.7.6"
+python = ">=3.10, <3.12"
+numpy = "^1.25.0"
+pandas = "^1.5.3"
+PyYAML = "^6.0"
+scikit-learn = "^1.3.0"
+torch = "^1.13.1"
+wandb = ">=0.15.2"
+xgboost = "^1.7.0"
+python-dotenv = "^1.0.0"
+scipy = "^1.11.0"
+tqdm = "^4.65.0"
+tsai = ">=0.3.7"
+vibdata = {git = "git@gitlab.com:ninfa-ufes/deep-rpdbcs/signal-datasets.git", rev = "6e536b57479bbbff19d21139b6fb1b1bab663002"}
 
+[tool.poetry.dev-dependencies]
+pytest = "^7.0.0"
+pytest-cov = "^4.0.0"
+ipython = "^8.0.0"
+isort = "^5.0.0"
+black = "^23.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
