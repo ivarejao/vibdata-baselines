@@ -5,7 +5,7 @@ import numpy.typing as npt
 from vibdata.deep.DeepDataset import DeepDataset
 from vibdata.deep.signal.core import SignalSample
 
-from lib.config import Config
+from vibnet.config import Config
 
 
 class GroupDataset:

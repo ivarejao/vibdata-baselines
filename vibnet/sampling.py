@@ -7,10 +7,10 @@ import numpy.typing as npt
 from torch.utils.data import Subset, Dataset, DataLoader, BatchSampler, SequentialSampler
 from sklearn.model_selection import LeaveOneGroupOut, StratifiedKFold
 
-import lib.data.group_dataset as groups_module
-from lib.config import Config
-from utils.dataloaders import BalancedBatchSampler
-from utils.MemeDataset import MemeDataset
+import vibnet.data.group_dataset as groups_module
+from vibnet.config import Config
+from vibnet.utils.dataloaders import BalancedBatchSampler
+from vibnet.utils.MemeDataset import MemeDataset
 
 
 class DataSampling:

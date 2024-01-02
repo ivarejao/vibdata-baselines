@@ -13,11 +13,11 @@ from torch.amp.autocast_mode import autocast
 from torch.cuda.amp.grad_scaler import GradScaler
 
 import wandb
-from lib.config import Config
-from lib.sampling import DataSampling
-from utils.report import ReportDict
-from lib.experiment import Experiment
-from lib.models.model import Model
+from vibnet.config import Config
+from vibnet.sampling import DataSampling
+from vibnet.utils.report import ReportDict
+from vibnet.experiment import Experiment
+from vibnet.models.model import Model
 
 
 class ExpRunner:

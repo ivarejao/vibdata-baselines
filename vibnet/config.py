@@ -6,7 +6,7 @@ import vibdata.raw as datasets
 import vibdata.deep.signal.transforms as deep_transforms
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 
-from lib.models.model import Model
+from vibnet.models.model import Model
 
 
 class Config:

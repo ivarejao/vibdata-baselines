@@ -5,7 +5,7 @@ import torch
 from dotenv import load_dotenv
 
 import wandb
-from lib.config import Config
+from vibnet.config import Config
 
 
 class Experiment:
