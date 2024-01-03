@@ -31,6 +31,9 @@ python-lsp-ruff = "^1.5.0"
 python-lsp-black = ">=1.3.0"
 pyls-isort = ">=0.2.2"
 
+[tool.poetry.scripts]
+vibnet = "vibnet.cli:run_baselines"
+
 [tool.ruff]
 ignore = ["E501"]
 select = ["E", "F", "I001"]
