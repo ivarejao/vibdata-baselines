@@ -1,0 +1,41 @@
+# Experiment overall settings
+epochs: 80
+batch_size: 256
+seed: 42
+model_checkpoint_gap: 1
+# Training settings
+optimizer:
+  name: Adam
+  parameters:
+    lr: 0.0003
+    weight_decay: 0.001
+# Define the learning rates schedules that will be used.
+# Can be 1 or more schedulers
+lr_scheduler:
+  - name: ExponentialLR
+    parameters:
+      gamma: 0.9
+model:
+  name: m5
+  parameters:
+    n_output: 4
+dataset:
+  name: CWRU
+  groups_dir: "data/groups"
+  raw: 
+    root: "data/raw_datasets"
+  deep:
+    root: "data/deep_datasets"
+    transforms:
+      - name: SplitSampleRate
+        parameters:
+          on_field: signal
+      - name: NormalizeSampleRate
+        parameters:
+          sample_rate: 97656
+      - name: StandardScaler
+        parameters: 
+          on_field: signal
+params_grid:
+  lr: [1, 0.01, 0.001, 0.0003]
+

@@ -1,0 +1,10 @@
+numpy==1.25.0
+pandas==1.5.3
+python-dotenv==1.0.0
+PyYAML==6.0.1
+scikit_learn==1.2.2
+torch==1.13.1
+tqdm==4.65.0
+tsai==0.3.7
+wandb==0.15.2
+xgboost==1.7.6
