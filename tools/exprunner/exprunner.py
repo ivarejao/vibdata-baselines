@@ -1,6 +1,6 @@
 import os
 import subprocess
-from argparse import Namespace, ArgumentParser
+from argparse import ArgumentParser, Namespace
 
 from dotenv import load_dotenv
 
@@ -26,9 +26,15 @@ DATASETS = [
 
 def parse_args() -> Namespace:
     parser = ArgumentParser()
-    parser.add_argument("--host", help="Host name", required=True, choices=list(HOSTS.keys()))
-    parser.add_argument("--dataset", help="Dataset to be used", required=True, choices=DATASETS)
-    parser.add_argument("--branch", help="Branch where the experiment will run", default="dev")
+    parser.add_argument(
+        "--host", help="Host name", required=True, choices=list(HOSTS.keys())
+    )
+    parser.add_argument(
+        "--dataset", help="Dataset to be used", required=True, choices=DATASETS
+    )
+    parser.add_argument(
+        "--branch", help="Branch where the experiment will run", default="dev"
+    )
     args = parser.parse_args()
     return args
 
@@ -43,14 +49,15 @@ def run_experiment(host_name, dataset, branch):
     # Define the command to execute
     command_template = (
         "python3 main.py --cfg cfgs/xresnet18.yaml --run fullexp/1/{dataset}-{host_name}_run"
-        + " --dataset {dataset_name} --batch-size {batch_size}"
+        + " --dataset {dataset} --batch-size {batch_size}"
     )
     # # Iterate through SSH connections and dataset names
     # for idx, metadata in details.iterrows():
-    bs = HOSTS[dataset]["batch_size"]
+    bs = HOSTS[host_name]["batch_size"]
     try:
         ssh_cmd = (
-            f"ssh {os.environ['SSH_USER']}@{host_name}" + " -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new"
+            f"ssh {os.environ['SSH_USER']}@{host_name}"
+            + " -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new"
         )
         # Clone the repository, move to the directory
         clone_cmd = (
@@ -59,7 +66,9 @@ def run_experiment(host_name, dataset, branch):
         )
 
         # Create .env file with environment variables
-        env_content = "\n".join([f"{key}={value}" for key, value in env_variables.items()])
+        env_content = "\n".join(
+            [f"{key}={value}" for key, value in env_variables.items()]
+        )
         env_cmd = f'echo "{env_content}" > .env'
 
         # Create python env and activate it
@@ -73,7 +82,9 @@ def run_experiment(host_name, dataset, branch):
             + "@gitlab.com/ninfa-ufes/deep-rpdbcs/signal-datasets.git@e889f36eab3c016a9ab3c6dfb40ee85baa25e208"
         )
         # Execute the command with dataset and connection information
-        run_cmd = command_template.format(dataset=dataset, host_name=host_name, batch_size=bs)
+        run_cmd = command_template.format(
+            dataset=dataset, host_name=host_name, batch_size=bs
+        )
 
         cmds = [
             ssh_cmd,
