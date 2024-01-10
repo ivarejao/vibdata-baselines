@@ -5,10 +5,10 @@ from datetime import datetime
 
 import numpy as np
 
-from vibnet.lib.config import Config
-from vibnet.lib.runner import ExpRunner
-from vibnet.lib.sampling import DataSampling
-from vibnet.lib.experiment import Experiment
+from vibnet.config import Config
+from vibnet.runner import ExpRunner
+from vibnet.sampling import DataSampling
+from vibnet.experiment import Experiment
 
 
 def parse_args() -> Namespace:

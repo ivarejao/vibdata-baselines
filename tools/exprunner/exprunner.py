@@ -59,11 +59,17 @@ def run_experiment(host_name, dataset, branch):
             f"ssh {os.environ['SSH_USER']}@{host_name}"
             + " -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new"
         )
-        # Clone the repository, move to the directory
+
+        checkout_cmd = (
+            f"cd vibnet && git fetch origin {branch} && git checkout {branch}"
+        )
         clone_cmd = (
             f"git clone -b {branch} https://{os.environ['GIT_USER']}:{os.environ['GIT_PASSWORD']}"
             + "@gitlab.com/ninfa-ufes/deep-rpdbcs/vibnet.git && cd vibnet"
         )
+        # Setup de repository, if the repo already exists, only checkout into the target branch, otherwise,
+        # clone the repo
+        setup_repo = f"if [ -d vibnet/ ]; then {checkout_cmd}; else {clone_cmd}; fi"
 
         # Create .env file with environment variables
         env_content = "\n".join(
@@ -88,7 +94,7 @@ def run_experiment(host_name, dataset, branch):
 
         cmds = [
             ssh_cmd,
-            clone_cmd,
+            setup_repo,
             env_cmd,
             pythonenv_create_cmd,
             activate_cmd,
