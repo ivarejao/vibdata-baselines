@@ -1,0 +1,202 @@
+import numbers
+from collections import defaultdict
+from typing import Any, Literal, Optional, Type
+
+import lightning as L
+import numpy as np
+import torch
+from lightning.pytorch.loggers.wandb import WandbLogger
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.model_selection import StratifiedKFold
+from sklearn.utils.validation import check_is_fitted
+from torch import nn
+from torch.optim import Adam, Optimizer
+from torch.utils.data import DataLoader, Subset
+from vibdata.deep.DeepDataset import DeepDataset
+
+from vibnet.utils.dataloaders import BalancedDataLoader
+from vibnet.utils.lightning import VibnetModule
+from vibnet.utils.MemeDataset import MemeDataset
+
+
+class TrainDataset(MemeDataset):
+    """Dataset that can be splitted into a subset. Useful for folding"""
+
+    def __getitem__(self, idx: int | np.ndarray[np.int64]):
+        if isinstance(idx, numbers.Integral):  # works with int, np.int64, ...
+            X, y = super().__getitem__(idx)
+            return torch.tensor(X, dtype=torch.float32), torch.tensor(y)
+
+        return Subset(self, idx)
+
+
+class PredictDataset(MemeDataset):
+    """Useful for test fold"""
+
+    def __getitem__(self, idx: int):
+        entry = super().__getitem__(idx)
+        match entry:
+            case (X, _):
+                return torch.tensor(X, dtype=torch.float32)
+            case X:
+                return torch.tensor(X, dtype=torch.float32)
+
+
+class SingleSplit:
+    """CV splitter wrapper. Split dataset only once"""
+
+    def __init__(self, cv):
+        if isinstance(cv, numbers.Integral):
+            self.cv = StratifiedKFold(cv)
+        else:
+            self.cv = cv
+
+    def __call__(self, dataset, y=None, groups=None) -> tuple[np.ndarray, np.ndarray]:
+        """Return train and test indexes"""
+        X = np.zeros([len(y), 1])  # fake dataset
+
+        for train_index, test_index in self.cv.split(X, y, groups):
+            # Uses only the first split
+            return train_index, test_index
+
+
+class VibnetEstimator(BaseEstimator, ClassifierMixin):
+    _run_name_counter = defaultdict(lambda: 0)
+
+    def __init__(
+        self,
+        module: Type[nn.Module],
+        num_classes: int,
+        wandb_project: str,
+        wandb_name: str,
+        optimizer: Type[Optimizer] = Adam,
+        loss_fn: nn.Module = nn.CrossEntropyLoss(),
+        iterator_train: Type[DataLoader] = BalancedDataLoader,
+        iterator_valid: Type[DataLoader] = DataLoader,
+        train_split: Optional[SingleSplit] = None,
+        accelerator: Literal["cpu", "gpu"] = "cpu",
+        devices: int | Literal["auto"] = "auto",
+        precision: Optional[
+            Literal[64, 32, 16] | Literal["64", "32", "16", "bf16-mixed"]
+        ] = None,
+        max_epochs: int = 1,
+        fast_dev_run: int | bool = False,
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.module = module
+        self.num_classes = num_classes
+        self.optimizer = optimizer
+        self.loss_fn = loss_fn
+        self.iterator_train = iterator_train
+        self.iterator_valid = iterator_valid
+        self.train_split = train_split
+        self.accelerator = accelerator
+        self.devices = devices
+        self.precision = precision
+        self.max_epochs = max_epochs
+        self.fast_dev_run = fast_dev_run
+
+        self.module_: Optional[VibnetModule] = None
+        self.trainer_: Optional[L.Trainer] = None
+        self.logger_: Optional[WandbLogger] = None
+
+        self.wandb_project = wandb_project
+        self.wandb_name = wandb_name
+
+        kwargs_prefixes = ["optimizer__", "iterator_train__", "iterator_valid__"]
+        for k, v in kwargs.items():
+            if not any(k.startswith(p) for p in kwargs_prefixes):
+                raise TypeError("'{k}' is not a valid argument")
+            setattr(self, k, v)
+
+    def _optimizer_params(self) -> dict[str, Any]:
+        return self._params_prefix("optimizer__")
+
+    def _iterator_train_params(self) -> dict[str, Any]:
+        return self._params_prefix("iterator_train__")
+
+    def _iterator_valid_params(self) -> dict[str, Any]:
+        return self._params_prefix("iterator_valid__")
+
+    def _params_prefix(self, prefix: str) -> dict[str, Any]:
+        params = {}
+        for attr in dir(self):
+            if attr.startswith(prefix):
+                params[attr.removeprefix(prefix)] = getattr(self, attr)
+        return params
+
+    def _create_module(self) -> VibnetModule:
+        return VibnetModule(
+            network=self.module(),
+            loss_fn=self.loss_fn,
+            optimizer_class=self.optimizer,
+            optimizer_params=self._optimizer_params(),
+            num_classes=self.num_classes,
+        )
+
+    def _create_trainer(self) -> L.Trainer:
+        return L.Trainer(
+            accelerator=self.accelerator,
+            devices=self.devices,
+            precision=self.precision,
+            max_epochs=self.max_epochs,
+            fast_dev_run=self.fast_dev_run,
+        )
+
+    def _dataloaders(self, X: DeepDataset) -> tuple[DataLoader, Optional[DataLoader]]:
+        if self.train_split is None:
+            params = self._iterator_train_params()
+            dataset = TrainDataset(X)
+            dataloader = self.iterator_train(dataset, **params)
+            return dataloader, None
+
+        targets = np.array(X.metainfo["label"], dtype=int)
+        train_index, valid_index = self.train_split(X, targets)
+
+        dataset = TrainDataset(X)
+        train_dataset, valid_dataset = dataset[train_index], dataset[valid_index]
+
+        train_params = self._iterator_train_params()
+        train_dl = self.iterator_train(train_dataset, **train_params)
+
+        valid_params = self._iterator_valid_params()
+        valid_dl = self.iterator_valid(valid_dataset, **valid_params)
+
+        return train_dl, valid_dl
+
+    def _create_logger(self) -> WandbLogger:
+        name = self.enumerated_run_name(self.wandb_name)
+        return WandbLogger(project=self.wandb_project, name=name)
+
+    def fit(self, X: DeepDataset, y=None, **fit_params):
+        model = self._create_module()
+        trainer = self._create_trainer()
+
+        train_dl, valid_dl = self._dataloaders(X)
+
+        if valid_dl is None:
+            trainer.fit(model, train_dl)
+        else:
+            trainer.fit(model, train_dl, valid_dl)
+
+        self.trainer_ = trainer
+        self.module_ = model
+
+        return self
+
+    def predict(self, X: DeepDataset):
+        check_is_fitted(self)
+        dataset = PredictDataset(X)
+        valid_params = self._iterator_valid_params()
+        dataloader = self.iterator_valid(dataset, **valid_params)
+        predictions = self.trainer_.predict(self.module_, dataloader)
+        predicted_labels = torch.concat([p.argmax(axis=1) for p in predictions])
+        return predicted_labels.cpu().numpy()
+
+    @staticmethod
+    def enumerated_run_name(prefix: str) -> str:
+        counter = VibnetEstimator._run_name_counter[prefix]
+        VibnetEstimator._run_name_counter[prefix] += 1
+        return f"{prefix}-{counter:02d}"
