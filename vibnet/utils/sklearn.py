@@ -1,4 +1,5 @@
 import numbers
+import sys
 from collections import defaultdict
 from typing import Any, Literal, Optional, Type
 
@@ -6,6 +7,7 @@ import lightning as L
 import numpy as np
 import torch
 from lightning.pytorch.loggers.wandb import WandbLogger
+from lightning.pytorch.strategies import Strategy
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.validation import check_is_fitted
@@ -81,6 +83,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         ] = None,
         max_epochs: int = 1,
         fast_dev_run: int | bool = False,
+        strategy: str | Strategy = "auto",
         **kwargs,
     ):
         super().__init__()
@@ -97,6 +100,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         self.precision = precision
         self.max_epochs = max_epochs
         self.fast_dev_run = fast_dev_run
+        self.strategy = strategy
 
         self.module_: Optional[VibnetModule] = None
         self.trainer_: Optional[L.Trainer] = None
@@ -143,6 +147,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             precision=self.precision,
             max_epochs=self.max_epochs,
             fast_dev_run=self.fast_dev_run,
+            strategy=self.strategy,
         )
 
     def _dataloaders(self, X: DeepDataset) -> tuple[DataLoader, Optional[DataLoader]]:
@@ -184,14 +189,32 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         self.trainer_ = trainer
         self.module_ = model
 
+        # Default strategy duplicates the process and run two equal scripts after
+        # training. To prevent erros the clone process must exit early with status 0.
+        try:
+            if not self.module_.trainer.is_global_zero:
+                sys.exit(0)
+        except RuntimeError:
+            # Some strategies (e.g. "ddp_spawn") don't attach trainer object
+            pass
+
         return self
+
+    def _create_predict_trainer(self):
+        return L.Trainer(
+            accelerator=self.accelerator,
+            # Multi GPU in .predict can be error prone
+            devices=1 if self.accelerator == "gpu" else "auto",
+            precision=self.precision,
+        )
 
     def predict(self, X: DeepDataset):
         check_is_fitted(self)
         dataset = PredictDataset(X)
+        trainer = self._create_predict_trainer()
         valid_params = self._iterator_valid_params()
         dataloader = self.iterator_valid(dataset, **valid_params)
-        predictions = self.trainer_.predict(self.module_, dataloader)
+        predictions = trainer.predict(self.module_, dataloader)
         predicted_labels = torch.concat([p.argmax(axis=1) for p in predictions])
         return predicted_labels.cpu().numpy()
 
