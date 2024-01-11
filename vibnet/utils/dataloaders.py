@@ -1,92 +1,69 @@
 import random
+from typing import Iterator
 
 import numpy as np
 import torch
-from torch.utils.data.sampler import BatchSampler
+from torch.utils.data import DataLoader, Subset, default_collate
+from torch.utils.data.sampler import Sampler
+
+from vibnet.utils.MemeDataset import MemeDataset
 
 
-class BalancedBatchSampler(BatchSampler):
-    """
-    Returns batches of size n_classes * n_samples
-    """
-
-    def __init__(self, labels, n_classes: int, n_samples: int):
-        if torch.is_tensor(labels):
-            labels = labels.numpy()
-        if isinstance(labels, list):
-            labels = np.array(labels)
-        self.labels_set = list(set(labels))
-        # Create the dict where for each label, the indices will be stored in a list
-        self.label_to_indices = {label: np.where(labels == label)[0] for label in self.labels_set}
-        for label in self.labels_set:
-            np.random.shuffle(self.label_to_indices[label])
-        self.used_label_indices_count = {label: 0 for label in self.labels_set}
-        self.count = 0
-        self.n_classes = n_classes
-        self.n_samples = n_samples
-        self.n_dataset = len(labels)
-        self.batch_size = self.n_samples * self.n_classes
-
-    def __iter__(self):
-        self.count = 0
-        while self.count + self.batch_size <= self.n_dataset:
-            classes = np.random.choice(self.labels_set, self.n_classes, replace=False)
-            indices = []
-            for class_ in classes:
-                indices.extend(
-                    self.label_to_indices[class_][
-                        self.used_label_indices_count[class_] : (self.used_label_indices_count[class_] + self.n_samples)
-                    ]
-                )
-                self.used_label_indices_count[class_] += self.n_samples
-                # If theres still batches to do but theres no more classes samples, begin to add samples with replacament
-                if self.used_label_indices_count[class_] + self.n_samples > len(self.label_to_indices[class_]):
-                    np.random.shuffle(self.label_to_indices[class_])
-                    self.used_label_indices_count[class_] = 0
-            yield indices
-            self.count += self.n_classes * self.n_samples
-
-    def __len__(self):
-        return self.n_dataset // self.batch_size
+def get_targets(dataset: MemeDataset | Subset) -> np.ndarray[np.int64]:
+    if isinstance(dataset, MemeDataset):
+        return dataset.targets
+    elif isinstance(dataset, Subset):
+        targets = get_targets(dataset.dataset)
+        return targets[dataset.indices]
+    else:
+        ds_type = type(dataset)
+        raise TypeError(f"Dataset of type '{ds_type}' is not supported")
 
 
-class BalancedDataLoader(torch.utils.data.DataLoader):
-    def __init__(self, dataset, batch_size=1, num_workers=0, collate_fn=None, pin_memory=False, worker_init_fn=None):
-        targets = BalancedDataLoader.getTargets(dataset)
-        if targets is None:
-            super().__init__(
-                dataset,
-                num_workers=num_workers,
-                collate_fn=collate_fn,
-                pin_memory=pin_memory,
-                worker_init_fn=worker_init_fn,
+class BalancedSampler(Sampler):
+    def __init__(self, dataset: MemeDataset | Subset, random_state=None):
+        labels = get_targets(dataset)
+        self.labels = labels.reshape(-1)
+        self.unique_labels: np.ndarray[int] = np.unique(labels)
+        self.n_labels = self.unique_labels.size
+
+        self.length = self.n_labels * (labels.size // self.n_labels)
+        self.rng = np.random.default_rng(random_state)
+
+    def __len__(self) -> int:
+        return self.length
+
+    def __iter__(self) -> Iterator[int]:
+        indexes = np.arange(self.labels.size)
+
+        indexes_by_label = []
+        for label in self.unique_labels:
+            mask = self.labels == label
+            label_indexes = indexes[mask]
+            sampled_indexes = self.rng.choice(
+                label_indexes, size=len(self) // self.n_labels
             )
-        else:
-            if batch_size > len(targets):
-                batch_size = len(targets)
-            if torch.is_tensor(targets):
-                targets = targets.cpu().numpy()
-            nclasses = len(set(targets))
-            sampler = BalancedBatchSampler(targets, nclasses, batch_size // nclasses)
-            super().__init__(
-                dataset,
-                num_workers=num_workers,
-                batch_sampler=sampler,
-                collate_fn=collate_fn,
-                pin_memory=pin_memory,
-                worker_init_fn=worker_init_fn,
-            )
+            indexes_by_label.append(sampled_indexes)
 
-    @staticmethod
-    def getTargets(dataset):
-        if hasattr(dataset, "y"):
-            return dataset.y
-        elif hasattr(dataset, "targets"):
-            return dataset.targets
-        if isinstance(dataset, torch.utils.data.Subset):
-            targets = BalancedDataLoader.getTargets(dataset.dataset)
-            return targets[dataset.indices]
-        return None
+        for indexes in zip(*indexes_by_label):
+            for idx in indexes:
+                yield idx
+
+
+def unsqueeze_collate(batch):
+    if isinstance(batch, list):
+        return default_collate(batch)
+
+    signal, target = batch
+    return signal.unsqueeze(dim=0), target
+
+
+class BalancedDataLoader(DataLoader):
+    def __init__(
+        self, dataset: MemeDataset | Subset, drop_last=False, sampler=None, **kwargs
+    ):
+        sampler = BalancedSampler(dataset)
+        super().__init__(dataset, sampler=sampler, drop_last=False, **kwargs)
 
 
 def seed_worker(worker_id):
