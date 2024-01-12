@@ -13,10 +13,10 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.validation import check_is_fitted
 from torch import nn
 from torch.optim import Adam, Optimizer
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Dataset, Subset
 from vibdata.deep.DeepDataset import DeepDataset
 
-from vibnet.utils.dataloaders import BalancedDataLoader
+from vibnet.utils.dataloaders import BalancedDataLoader, get_targets
 from vibnet.utils.lightning import VibnetModule
 from vibnet.utils.MemeDataset import MemeDataset
 
@@ -24,24 +24,46 @@ from vibnet.utils.MemeDataset import MemeDataset
 class TrainDataset(MemeDataset):
     """Dataset that can be splitted into a subset. Useful for folding"""
 
-    def __getitem__(self, idx: int | np.ndarray[np.int64]):
+    def __getitem__(self, idx: int | np.ndarray[np.int64] | list[int]):
         if isinstance(idx, numbers.Integral):  # works with int, np.int64, ...
             X, y = super().__getitem__(idx)
             return torch.tensor(X, dtype=torch.float32), torch.tensor(y)
 
         return Subset(self, idx)
 
+    @property
+    def ndim(self):
+        return 2  # Compatibility work around
 
-class PredictDataset(MemeDataset):
+    @property
+    def shape(self):
+        return len(self), 2  # Compatibility work around
+
+
+class PredictDataset(Dataset):
     """Useful for test fold"""
 
+    def __init__(self, ds: Dataset | DeepDataset):
+        if isinstance(ds, DeepDataset):
+            ds = TrainDataset(ds)
+        self.ds = ds
+
     def __getitem__(self, idx: int):
-        entry = super().__getitem__(idx)
+        entry = self.ds[idx]
+        array = None
         match entry:
             case (X, _):
-                return torch.tensor(X, dtype=torch.float32)
+                array = X
             case X:
-                return torch.tensor(X, dtype=torch.float32)
+                array = X
+
+        if torch.is_tensor(array):
+            return array.type(torch.float32)
+        else:
+            return torch.tensor(array, dtype=torch.float32)
+
+    def __len__(self):
+        return len(self.ds)
 
 
 class SingleSplit:
@@ -63,6 +85,7 @@ class SingleSplit:
 
 
 class VibnetEstimator(BaseEstimator, ClassifierMixin):
+    _kwargs_prefixes = ["optimizer__", "iterator_train__", "iterator_valid__"]
     _run_name_counter = defaultdict(lambda: 0)
 
     def __init__(
@@ -109,9 +132,8 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         self.wandb_project = wandb_project
         self.wandb_name = wandb_name
 
-        kwargs_prefixes = ["optimizer__", "iterator_train__", "iterator_valid__"]
         for k, v in kwargs.items():
-            if not any(k.startswith(p) for p in kwargs_prefixes):
+            if not any(k.startswith(p) for p in VibnetEstimator._kwargs_prefixes):
                 raise TypeError("'{k}' is not a valid argument")
             setattr(self, k, v)
 
@@ -130,6 +152,13 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             if attr.startswith(prefix):
                 params[attr.removeprefix(prefix)] = getattr(self, attr)
         return params
+
+    def get_params(self, deep=True) -> dict[str, Any]:
+        out: dict[str, Any] = super().get_params(deep=deep)
+        for attr in dir(self):
+            if any(attr.startswith(p) for p in VibnetEstimator._kwargs_prefixes):
+                out[attr] = getattr(self, attr)
+        return out
 
     def _create_module(self) -> VibnetModule:
         return VibnetModule(
@@ -150,17 +179,25 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             strategy=self.strategy,
         )
 
-    def _dataloaders(self, X: DeepDataset) -> tuple[DataLoader, Optional[DataLoader]]:
+    def _dataloaders(
+        self, X: DeepDataset | TrainDataset | Subset
+    ) -> tuple[DataLoader, Optional[DataLoader]]:
+        """train/validation dataloaders"""
+
+        if isinstance(X, DeepDataset):
+            dataset = TrainDataset(X)
+        else:
+            dataset = X
+
+        self.classes_ = np.unique(get_targets(dataset))
+
         if self.train_split is None:
             params = self._iterator_train_params()
-            dataset = TrainDataset(X)
             dataloader = self.iterator_train(dataset, **params)
             return dataloader, None
 
-        targets = np.array(X.metainfo["label"], dtype=int)
+        targets = get_targets(dataset)
         train_index, valid_index = self.train_split(X, targets)
-
-        dataset = TrainDataset(X)
         train_dataset, valid_dataset = dataset[train_index], dataset[valid_index]
 
         train_params = self._iterator_train_params()
@@ -175,7 +212,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         name = self.enumerated_run_name(self.wandb_name)
         return WandbLogger(project=self.wandb_project, name=name)
 
-    def fit(self, X: DeepDataset, y=None, **fit_params):
+    def fit(self, X: DeepDataset | TrainDataset | Subset, y=None, **fit_params):
         model = self._create_module()
         trainer = self._create_trainer()
 
@@ -192,7 +229,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         # Default strategy duplicates the process and run two equal scripts after
         # training. To prevent erros the clone process must exit early with status 0.
         try:
-            if not self.module_.trainer.is_global_zero:
+            if self.strategy == "ddp" and not self.module_.trainer.is_global_zero:
                 sys.exit(0)
         except RuntimeError:
             # Some strategies (e.g. "ddp_spawn") don't attach trainer object
@@ -208,7 +245,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             precision=self.precision,
         )
 
-    def predict(self, X: DeepDataset):
+    def predict(self, X: DeepDataset | TrainDataset | MemeDataset | Subset):
         check_is_fitted(self)
         dataset = PredictDataset(X)
         trainer = self._create_predict_trainer()
