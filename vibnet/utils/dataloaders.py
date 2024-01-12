@@ -17,7 +17,7 @@ def get_targets(dataset: MemeDataset | Subset) -> np.ndarray[np.int64]:
         return targets[dataset.indices]
     else:
         ds_type = type(dataset)
-        raise TypeError(f"Dataset of type '{ds_type}' is not supported")
+        raise TypeError(f"Dataset of type {ds_type} is not supported")
 
 
 class BalancedSampler(Sampler):
@@ -45,9 +45,8 @@ class BalancedSampler(Sampler):
             )
             indexes_by_label.append(sampled_indexes)
 
-        for indexes in zip(*indexes_by_label):
-            for idx in indexes:
-                yield idx
+        batch_indexes = np.vstack(indexes_by_label).T.reshape(-1)
+        return iter(batch_indexes)
 
 
 def unsqueeze_collate(batch):
