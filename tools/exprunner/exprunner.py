@@ -49,7 +49,7 @@ def run_experiment(host_name, dataset, branch):
     # Define the command to execute
     command_template = (
         "python3 main.py --cfg cfgs/xresnet18.yaml --run fullexp/1/{dataset}-{host_name}_run"
-        + " --dataset {dataset} --batch-size {batch_size}"
+        + " --dataset {dataset} --batch-size {batch_size} --unbiased"
     )
     # # Iterate through SSH connections and dataset names
     # for idx, metadata in details.iterrows():
@@ -60,9 +60,7 @@ def run_experiment(host_name, dataset, branch):
             + " -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new"
         )
 
-        checkout_cmd = (
-            f"cd vibnet && git fetch origin {branch} && git checkout {branch}"
-        )
+        checkout_cmd = f"cd vibnet && git fetch origin {branch} && git checkout {branch} && git pull origin {branch}"
         clone_cmd = (
             f"git clone -b {branch} https://{os.environ['GIT_USER']}:{os.environ['GIT_PASSWORD']}"
             + "@gitlab.com/ninfa-ufes/deep-rpdbcs/vibnet.git && cd vibnet"
