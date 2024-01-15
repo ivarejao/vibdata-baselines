@@ -1,7 +1,9 @@
+import logging
 import numbers
 import sys
 from collections import defaultdict
-from typing import Any, Literal, Optional, Type
+from functools import wraps
+from typing import Any, Callable, Literal, Optional, Type
 
 import lightning as L
 import numpy as np
@@ -19,6 +21,21 @@ from vibdata.deep.DeepDataset import DeepDataset
 from vibnet.utils.dataloaders import BalancedDataLoader, get_targets
 from vibnet.utils.lightning import VibnetModule
 from vibnet.utils.MemeDataset import MemeDataset
+
+
+def _no_lightning_logs(func: Callable):
+    @wraps(func)
+    def wrapper_func(*args, **kwargs) -> Any:
+        lightning_logger = logging.getLogger("lightning.pytorch")
+        current_level = lightning_logger.level
+        lightning_logger.setLevel(logging.ERROR)
+
+        return_value = func(*args, **kwargs)
+
+        lightning_logger.setLevel(current_level)
+        return return_value
+
+    return wrapper_func
 
 
 class TrainDataset(MemeDataset):
@@ -177,6 +194,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             max_epochs=self.max_epochs,
             fast_dev_run=self.fast_dev_run,
             strategy=self.strategy,
+            enable_progress_bar=False,
         )
 
     def _dataloaders(
@@ -212,6 +230,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         name = self.enumerated_run_name(self.wandb_name)
         return WandbLogger(project=self.wandb_project, name=name)
 
+    @_no_lightning_logs
     def fit(self, X: DeepDataset | TrainDataset | Subset, y=None, **fit_params):
         model = self._create_module()
         trainer = self._create_trainer()
@@ -243,8 +262,10 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             # Multi GPU in .predict can be error prone
             devices=1 if self.accelerator == "gpu" else "auto",
             precision=self.precision,
+            enable_progress_bar=False,
         )
 
+    @_no_lightning_logs
     def predict(self, X: DeepDataset | TrainDataset | MemeDataset | Subset):
         check_is_fitted(self)
         dataset = PredictDataset(X)
