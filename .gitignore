@@ -10,3 +10,7 @@ output/
 .env
 .idea
 UNKNOWN.egg-info
+.ruff_cache
+.coverage
+/cache
+lightning_logs
