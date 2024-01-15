@@ -17,10 +17,10 @@ python-dotenv = "^1.0.0"
 scipy = "^1.11.0"
 tqdm = "^4.65.0"
 tsai = ">=0.3.7"
-vibdata = {git = "git@gitlab.com:ninfa-ufes/deep-rpdbcs/signal-datasets.git", rev = "6e536b57479bbbff19d21139b6fb1b1bab663002"}
 typer = {version = ">=0.9.0", extras = ["all"]}
 lightning = "^2.1.0"
 torchmetrics = "^1.2.0"
+vibdata = {git = "git@gitlab.com:ninfa-ufes/deep-rpdbcs/signal-datasets.git", rev = "937343c786dd926b15be376149f7dbaa5947e94c"}
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0.0"
