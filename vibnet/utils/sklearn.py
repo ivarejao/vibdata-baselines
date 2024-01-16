@@ -129,6 +129,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         max_epochs: int = 1,
         fast_dev_run: int | bool = False,
         strategy: str | Strategy = "auto",
+        verbose: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -146,6 +147,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         self.max_epochs = max_epochs
         self.fast_dev_run = fast_dev_run
         self.strategy = strategy
+        self.verbose = verbose
 
         self.module_: Optional[VibnetModule] = None
         self.trainer_: Optional[L.Trainer] = None
@@ -202,7 +204,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             max_epochs=self.max_epochs,
             fast_dev_run=self.fast_dev_run,
             strategy=self.strategy,
-            enable_progress_bar=False,
+            enable_progress_bar=self.verbose,
         )
 
     def _dataloaders(
@@ -270,7 +272,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             # Multi GPU in .predict can be error prone
             devices=1 if self.accelerator == "gpu" else "auto",
             precision=self.precision,
-            enable_progress_bar=False,
+            enable_progress_bar=self.verbose,
         )
 
     @_no_lightning_logs
