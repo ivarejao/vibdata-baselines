@@ -102,7 +102,12 @@ class SingleSplit:
 
 
 class VibnetEstimator(BaseEstimator, ClassifierMixin):
-    _kwargs_prefixes = ["optimizer__", "iterator_train__", "iterator_valid__"]
+    _kwargs_prefixes = [
+        "module__",
+        "optimizer__",
+        "iterator_train__",
+        "iterator_valid__",
+    ]
     _run_name_counter = defaultdict(lambda: 0)
 
     def __init__(
@@ -154,6 +159,9 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
                 raise TypeError("'{k}' is not a valid argument")
             setattr(self, k, v)
 
+    def _module_params(self) -> dict[str, Any]:
+        return self._params_prefix("module__")
+
     def _optimizer_params(self) -> dict[str, Any]:
         return self._params_prefix("optimizer__")
 
@@ -179,7 +187,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
 
     def _create_module(self) -> VibnetModule:
         return VibnetModule(
-            network=self.module(),
+            network=self.module(self._module_params()),
             loss_fn=self.loss_fn,
             optimizer_class=self.optimizer,
             optimizer_params=self._optimizer_params(),
