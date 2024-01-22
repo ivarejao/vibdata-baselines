@@ -114,8 +114,8 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         self,
         module: Type[nn.Module],
         num_classes: int,
-        wandb_project: str,
-        wandb_name: str,
+        wandb_project: Optional[str],
+        wandb_name: Optional[str],
         optimizer: Type[Optimizer] = Adam,
         loss_fn: nn.Module = nn.CrossEntropyLoss(),
         iterator_train: Type[DataLoader] = BalancedDataLoader,
@@ -155,6 +155,12 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
 
         self.wandb_project = wandb_project
         self.wandb_name = wandb_name
+
+        # Replace this XOR-like expression?
+        if (wandb_project is None) != (wandb_name is None):
+            raise RuntimeError(
+                "Both wandb_project and wandb_name must be set or both must be None"
+            )
 
         for k, v in kwargs.items():
             if not any(k.startswith(p) for p in VibnetEstimator._kwargs_prefixes):
@@ -205,6 +211,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             fast_dev_run=self.fast_dev_run,
             strategy=self.strategy,
             enable_progress_bar=self.verbose,
+            logger=self._create_logger(),
         )
 
     def _dataloaders(
@@ -236,7 +243,9 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
 
         return train_dl, valid_dl
 
-    def _create_logger(self) -> WandbLogger:
+    def _create_logger(self) -> Optional[WandbLogger]:
+        if self.wandb_project is None:
+            return None
         name = self.enumerated_run_name(self.wandb_name)
         return WandbLogger(project=self.wandb_project, name=name)
 
