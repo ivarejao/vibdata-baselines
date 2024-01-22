@@ -114,8 +114,8 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         self,
         module: Type[nn.Module],
         num_classes: int,
-        wandb_project: Optional[str],
-        wandb_name: Optional[str],
+        wandb_project: Optional[str] = None,
+        wandb_name: Optional[str] = None,
         optimizer: Type[Optimizer] = Adam,
         loss_fn: nn.Module = nn.CrossEntropyLoss(),
         iterator_train: Type[DataLoader] = BalancedDataLoader,
@@ -195,7 +195,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
 
     def _create_module(self) -> VibnetModule:
         return VibnetModule(
-            network=self.module(self._module_params()),
+            network=self.module(**self._module_params()),
             loss_fn=self.loss_fn,
             optimizer_class=self.optimizer,
             optimizer_params=self._optimizer_params(),
@@ -285,15 +285,24 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         )
 
     @_no_lightning_logs
-    def predict(self, X: DeepDataset | TrainDataset | MemeDataset | Subset):
+    def predict_proba(
+        self, X: DeepDataset | TrainDataset | MemeDataset | Subset
+    ) -> np.ndarray[float]:
         check_is_fitted(self)
         dataset = PredictDataset(X)
         trainer = self._create_predict_trainer()
         valid_params = self._iterator_valid_params()
         dataloader = self.iterator_valid(dataset, **valid_params)
         predictions = trainer.predict(self.module_, dataloader)
-        predicted_labels = torch.concat([p.argmax(axis=1) for p in predictions])
-        return predicted_labels.cpu().numpy()
+        predictions = [
+            p.softmax(axis=1).to(torch.float32).cpu().numpy() for p in predictions
+        ]
+        return np.vstack(predictions)
+
+    def predict(self, X: DeepDataset | TrainDataset | MemeDataset | Subset):
+        probabilities = self.predict_proba(X)
+        predicted_labels = probabilities.argmax(axis=1)
+        return predicted_labels
 
     @staticmethod
     def enumerated_run_name(prefix: str) -> str:
