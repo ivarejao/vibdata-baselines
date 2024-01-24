@@ -13,7 +13,7 @@ from vibnet.models.Alexnet1d import alexnet
 from vibnet.models.M5 import M5
 from vibnet.models.model import Model
 from vibnet.models.Resnet1d import resnet18, resnet34
-from vibnet.utils.sklearn import TrainDataset, VibnetEstimator
+from vibnet.utils.sklearn import SingleSplit, TrainDataset, VibnetEstimator
 
 __all__ = ["Config", "ConfigSklearn"]
 
@@ -190,22 +190,33 @@ class ConfigSklearn:
         )
 
         optimizer_config = self.config["optimizer"]
-        estimator_parameters["module"] = getattr(torch.optim, optimizer_config["name"])
+        estimator_parameters["optimizer"] = getattr(
+            torch.optim, optimizer_config["name"]
+        )
         estimator_parameters.update(
-            {"module__" + k: v for k, v in model_config["parameters"].items()}
+            {"optimizer__" + k: v for k, v in optimizer_config["parameters"].items()}
         )
 
         # Extra parameters
         max_epochs = self.config["epochs"]
         batch_size = self.config["batch_size"]
         train_split = self.config.get("train_split", None)
+        train_split = SingleSplit(train_split) if train_split is not None else None
         precision = self.config.get("precision", None)
         fast_dev_run = self.config.get("fast_dev_run", False)
         verbose = self.config.get("verbose", False)
+        num_workers = self.config.get("num_workers", 0)
+
+        project_name = os.environ.get("WANDB_PROJECT", None)
+        run_name = self.config.get('run_name', None)
+        run_name = run_name if project_name is not None else None
 
         estimator = VibnetEstimator(
+            wandb_project=project_name,
+            wandb_name=run_name,
             max_epochs=max_epochs,
             iterator_train__batch_size=batch_size,
+            iterator_train__num_workers=num_workers,
             iterator_valid__batch_size=batch_size,
             train_split=train_split,
             precision=precision,
