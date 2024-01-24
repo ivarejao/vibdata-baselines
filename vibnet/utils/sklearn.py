@@ -1,6 +1,7 @@
 import logging
 import numbers
 import sys
+import tempfile
 from collections import defaultdict
 from functools import wraps
 from typing import Any, Callable, Literal, Optional, Type
@@ -18,9 +19,20 @@ from torch.optim import Adam, Optimizer
 from torch.utils.data import DataLoader, Dataset, Subset
 from vibdata.deep.DeepDataset import DeepDataset
 
+import wandb
 from vibnet.utils.dataloaders import BalancedDataLoader, get_targets
 from vibnet.utils.lightning import VibnetModule
 from vibnet.utils.MemeDataset import MemeDataset
+
+_run_name_counter = defaultdict(lambda: 0)
+
+
+def add_index(prefix: str) -> str:
+    global _run_name_counter
+    counter = _run_name_counter[prefix]
+    _run_name_counter[prefix] = counter + 1
+    name = f"{prefix}-{counter:02d}"
+    return name
 
 
 def _no_lightning_logs(func: Callable):
@@ -150,7 +162,6 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         self.verbose = verbose
 
         self.module_: Optional[VibnetModule] = None
-        self.trainer_: Optional[L.Trainer] = None
         self.logger_: Optional[WandbLogger] = None
 
         self.wandb_project = wandb_project
@@ -212,6 +223,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             strategy=self.strategy,
             enable_progress_bar=self.verbose,
             logger=self._create_logger(),
+            deterministic=True,
         )
 
     def _dataloaders(
@@ -246,8 +258,9 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
     def _create_logger(self) -> Optional[WandbLogger]:
         if self.wandb_project is None:
             return None
-        name = self.enumerated_run_name(self.wandb_name)
-        return WandbLogger(project=self.wandb_project, name=name)
+        save_dir = tempfile.mkdtemp(prefix="vibnet_run-")
+        name = add_index(self.wandb_name)
+        return WandbLogger(project=self.wandb_project, name=name, save_dir=save_dir)
 
     @_no_lightning_logs
     def fit(self, X: DeepDataset | TrainDataset | Subset, y=None, **fit_params):
@@ -261,7 +274,9 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         else:
             trainer.fit(model, train_dl, valid_dl)
 
-        self.trainer_ = trainer
+        if self.wandb_project is not None:
+            wandb.finish()
+
         self.module_ = model
 
         # Default strategy duplicates the process and run two equal scripts after
@@ -282,6 +297,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             devices=1 if self.accelerator == "gpu" else "auto",
             precision=self.precision,
             enable_progress_bar=self.verbose,
+            deterministic=True,
         )
 
     @_no_lightning_logs
@@ -303,9 +319,3 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         probabilities = self.predict_proba(X)
         predicted_labels = probabilities.argmax(axis=1)
         return predicted_labels
-
-    @staticmethod
-    def enumerated_run_name(prefix: str) -> str:
-        counter = VibnetEstimator._run_name_counter[prefix]
-        VibnetEstimator._run_name_counter[prefix] += 1
-        return f"{prefix}-{counter:02d}"
