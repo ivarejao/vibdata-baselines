@@ -9,7 +9,9 @@ from dotenv import load_dotenv
 
 from vibnet.data import group_dataset
 
-__all__ = ["set_deterministic", "wandb_login", "group_class"]
+__all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged"]
+
+_is_logged = False
 
 
 def set_deterministic(seed: int):
@@ -31,13 +33,20 @@ def set_deterministic(seed: int):
 
 
 def wandb_login():
+    global _is_logged
+
     load_dotenv()
     key = os.environ.get("WANDB_KEY", "")
     if key == "":
         raise RuntimeError("wandb must be set to use logging")
     wandb.login(key=key)
+    _is_logged = True
 
 
 def group_class(dataset_name: str) -> Type[group_dataset.GroupDataset]:
     class_ = getattr(group_dataset, "Group" + dataset_name)
     return class_
+
+
+def is_logged():
+    return _is_logged
