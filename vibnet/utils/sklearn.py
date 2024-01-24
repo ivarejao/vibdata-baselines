@@ -120,7 +120,6 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         "iterator_train__",
         "iterator_valid__",
     ]
-    _run_name_counter = defaultdict(lambda: 0)
 
     def __init__(
         self,
