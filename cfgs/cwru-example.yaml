@@ -1,0 +1,36 @@
+# Experiment overall settings
+epochs: 10
+batch_size: 128
+seed: 42
+train_split: 10
+run_name: "cwru-m5"
+# fast_dev_run: 5
+precision: "bf16-mixed"
+num_workers: 10
+# Training settings
+optimizer:
+  name: Adam
+  parameters:
+    lr: 0.0003
+    weight_decay: 0.001
+model:
+  name: m5
+  parameters:
+    n_output: 4
+dataset:
+  name: CWRU
+  groups_dir: "data/groups"
+  raw: 
+    root: "data/raw_datasets"
+  deep:
+    root: "data/deep_datasets"
+    transforms:
+      - name: SplitSampleRate
+        parameters:
+          on_field: signal
+      - name: NormalizeSampleRate
+        parameters:
+          sample_rate: 97656
+      - name: StandardScaler
+        parameters: 
+          on_field: signal
