@@ -31,9 +31,10 @@ class VibnetModule(L.LightningModule):
 
     def training_step(self, batch, batch_idx, dataloader_idx: Optional[int] = None):
         x, y = batch
+        y = y.reshape(-1)
         z = self.network(x)
-        loss = self.loss_fn(z, y)
 
+        loss = self.loss_fn(z, y)
         self.log("train/loss", loss)
         return loss
 
@@ -41,6 +42,7 @@ class VibnetModule(L.LightningModule):
         self, batch, batch_idx: int, dataloader_idx: Optional[int] = None
     ):
         x, y = batch
+        y = y.reshape(-1)
         z = self.network(x)
 
         self.val_acc(z, y)

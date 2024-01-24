@@ -61,7 +61,7 @@ class BalancedDataLoader(DataLoader):
     def __init__(
         self, dataset: MemeDataset | Subset, drop_last=False, sampler=None, **kwargs
     ):
-        sampler = BalancedSampler(dataset)
+        sampler = BalancedSampler(dataset, random_state=10)
         super().__init__(dataset, sampler=sampler, drop_last=False, **kwargs)
 
 

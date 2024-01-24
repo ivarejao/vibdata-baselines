@@ -15,7 +15,7 @@ class MemeDataset(Dataset):
     def __getitem__(self, idx: int):
         ret = self.dataset[idx]
         X = ret["signal"]
-        X = X.astype("float64")  # Force the array type
+        X = np.array(X, dtype=float)  # Force the array type
         if isinstance(ret["metainfo"], pd.Series):
             y = ret["metainfo"]["label"]
         else:
