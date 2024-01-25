@@ -15,6 +15,8 @@ def get_targets(dataset: MemeDataset | Subset) -> np.ndarray[np.int64]:
     elif isinstance(dataset, Subset):
         targets = get_targets(dataset.dataset)
         return targets[dataset.indices]
+    elif hasattr(dataset, "base_dataset"):
+        return get_targets(dataset.base_dataset)
     else:
         ds_type = type(dataset)
         raise TypeError(f"Dataset of type {ds_type} is not supported")

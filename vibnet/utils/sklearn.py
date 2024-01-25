@@ -2,21 +2,26 @@ import logging
 import numbers
 import sys
 import tempfile
+import warnings
 from collections import defaultdict
 from functools import wraps
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable, Literal, Optional, Type
+from zipfile import ZipFile
 
 import lightning as L
 import numpy as np
 import torch
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.strategies import Strategy
-from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.validation import check_is_fitted
 from torch import nn
 from torch.optim import Adam, Optimizer
 from torch.utils.data import DataLoader, Dataset, Subset
+from tqdm.auto import tqdm
 from vibdata.deep.DeepDataset import DeepDataset
 
 import wandb
@@ -42,7 +47,9 @@ def _no_lightning_logs(func: Callable):
         current_level = lightning_logger.level
         lightning_logger.setLevel(logging.ERROR)
 
-        return_value = func(*args, **kwargs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", module="lightning")
+            return_value = func(*args, **kwargs)
 
         lightning_logger.setLevel(current_level)
         return return_value
@@ -50,7 +57,17 @@ def _no_lightning_logs(func: Callable):
     return wrapper_func
 
 
-class TrainDataset(MemeDataset):
+class _SklearnCompatibleDataset:
+    @property
+    def ndim(self):
+        return 2  # Compatibility work around
+
+    @property
+    def shape(self):
+        return len(self), 2  # Compatibility work around
+
+
+class TrainDataset(MemeDataset, _SklearnCompatibleDataset):
     """Dataset that can be splitted into a subset. Useful for folding"""
 
     def __getitem__(self, idx: int | np.ndarray[np.int64] | list[int]):
@@ -59,14 +76,6 @@ class TrainDataset(MemeDataset):
             return torch.tensor(X, dtype=torch.float32), torch.tensor(y)
 
         return Subset(self, idx)
-
-    @property
-    def ndim(self):
-        return 2  # Compatibility work around
-
-    @property
-    def shape(self):
-        return len(self), 2  # Compatibility work around
 
 
 class PredictDataset(Dataset):
@@ -318,3 +327,73 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         probabilities = self.predict_proba(X)
         predicted_labels = probabilities.argmax(axis=1)
         return predicted_labels
+
+
+class ScaledDataset(Dataset, _SklearnCompatibleDataset):
+    def __init__(
+        self, base_dataset: TrainDataset | Subset, tmp_dir: TemporaryDirectory
+    ):
+        self.base_dataset = base_dataset
+        self.tmp_dir = tmp_dir
+        self.zip_path = Path(tmp_dir.name) / "scaled_signals.zip"
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int | list[int]) -> tuple[torch.Tensor, torch.Tensor]:
+        if not isinstance(idx, numbers.Integral):
+            return Subset(self, idx)
+
+        _, target = self.base_dataset[idx]
+
+        with np.load(self.zip_path) as npz:
+            signal = npz[str(idx)]
+
+        signal = torch.tensor(signal, dtype=torch.float32)
+        return signal, target
+
+
+class VibnetStandardScaler(BaseEstimator, TransformerMixin):
+    def __init__(self, in_channels: int = 1, verbose: bool = False):
+        super().__init__()
+        self.in_channels = in_channels
+        self.verbose = verbose
+
+    def fit(self, X: TrainDataset, y=None, **fit_params):
+        numel = [0] * self.in_channels
+        sums = [0] * self.in_channels
+        for signal, _ in X:
+            for idx, channel in enumerate(signal):
+                numel[idx] += int(channel.numel())
+                sums[idx] += float(channel.sum())
+        means = [s / n for s, n in zip(sums, numel)]
+
+        diff_sums = [0] * self.in_channels
+        for signal, _ in X:
+            for idx, channel in enumerate(signal):
+                mean_diff = (channel - means[idx]) ** 2
+                diff_sums[idx] += mean_diff.sum()
+        stds = np.sqrt([d / (n - 1) for d, n in zip(diff_sums, numel)])
+
+        self.means_ = np.array(means)
+        self.stds_ = stds
+
+        return self
+
+    def transform(self, X: TrainDataset) -> ScaledDataset:
+        check_is_fitted(self)
+
+        tmp_dir = TemporaryDirectory(dir=Path("."), prefix="scaled_dataset-")
+        path = Path(tmp_dir.name)
+
+        with ZipFile(path / "scaled_signals.zip", mode="w") as zipf:
+            idx = 0
+            iterator = tqdm(X, desc="Scaling signals") if self.verbose else X
+            for signal, _ in iterator:
+                signal = (signal - self.means_) / self.stds_
+                with zipf.open(f"{idx}.npy", "w") as npy_file:
+                    np.save(npy_file, signal, allow_pickle=False)
+                idx += 1
+
+        dataset = ScaledDataset(base_dataset=X, tmp_dir=tmp_dir)
+        return dataset
