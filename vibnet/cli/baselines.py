@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
-import wandb
 from dotenv import load_dotenv
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import balanced_accuracy_score, classification_report
@@ -17,6 +16,7 @@ from sklearn.model_selection import (
 from vibdata.deep.DeepDataset import DeepDataset
 
 import vibnet.data.group_dataset as groups_module
+import wandb
 from vibnet.config import Config
 
 

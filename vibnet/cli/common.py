@@ -4,9 +4,9 @@ from typing import Type
 
 import numpy as np
 import torch
-import wandb
 from dotenv import load_dotenv
 
+import wandb
 from vibnet.data import group_dataset
 
 __all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged"]
