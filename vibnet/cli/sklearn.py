@@ -5,10 +5,11 @@ from pathlib import Path
 import pandas as pd
 from rich import print
 from sklearn.model_selection import LeaveOneGroupOut, cross_validate
+from sklearn.pipeline import Pipeline
 
 import wandb
 from vibnet.config import ConfigSklearn
-from vibnet.utils.sklearn import TrainDataset
+from vibnet.utils.sklearn import TrainDataset, VibnetStandardScaler
 
 from .common import group_class, is_logged, set_deterministic, wandb_login
 
@@ -34,10 +35,13 @@ def main(cfg: Path):
     groups = group_obj.groups().reshape(-1)
 
     estimator = config.get_estimator()
+    pipeline = Pipeline(
+        [("scaler", VibnetStandardScaler(verbose=True)), ("classifier", estimator)]
+    )
     dataset = TrainDataset(dataset)
     cv = LeaveOneGroupOut()
     results = cross_validate(
-        estimator,
+        pipeline,
         dataset,
         dataset.targets,
         groups=groups,
@@ -55,6 +59,12 @@ def main(cfg: Path):
 
     if is_logged():
         project_name = os.environ["WANDB_PROJECT"]
-        run = wandb.init(project=project_name, name="Results")
+        run = wandb.init(
+            project=project_name,
+            name="Results",
+            group=config.group_name,
+        )
         table = wandb.Table(data=df)
+
         run.log({"Results": table})
+        run.save(str(cfg))
