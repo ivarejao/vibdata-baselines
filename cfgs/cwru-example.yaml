@@ -1,6 +1,6 @@
 # Experiment overall settings
-epochs: 10
-batch_size: 128
+epochs: 100
+batch_size: 256
 seed: 42
 train_split: 10
 run_name: "cwru-m5"
@@ -31,6 +31,3 @@ dataset:
       - name: NormalizeSampleRate
         parameters:
           sample_rate: 97656
-      - name: StandardScaler
-        parameters: 
-          on_field: signal
