@@ -105,7 +105,9 @@ class Config:
         deep_root_dir = os.path.join(self.config["dataset"]["deep"]["root"], dataset_name)
         # Get the transforms to be applied
         transforms_config = self.config["dataset"]["deep"]["transforms"]
-        transforms = deep_transforms.Sequential([getattr(deep_transforms, t["name"])(**t["parameters"]) for t in transforms_config])
+        transforms = deep_transforms.Sequential(
+            [getattr(deep_transforms, t["name"])(**t["parameters"]) for t in transforms_config]
+        )
         # Convert the raw dataset to deepdataset
         convertDataset(dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir)
         dataset = DeepDataset(deep_root_dir)

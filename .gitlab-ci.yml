@@ -1,9 +1,8 @@
 default:
-    image: python:3.8
+    image: python:3.10
     before_script:
        - pip install -U pip
        - pip install poetry 
-       - poetry install
 stages:
     - formatting
 
