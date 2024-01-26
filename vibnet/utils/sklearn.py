@@ -4,6 +4,7 @@ import sys
 import tempfile
 import warnings
 from collections import defaultdict
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -129,6 +130,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         "iterator_train__",
         "iterator_valid__",
     ]
+    _group_name = {}
 
     def __init__(
         self,
@@ -136,6 +138,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         num_classes: int,
         wandb_project: Optional[str] = None,
         wandb_name: Optional[str] = None,
+        wandb_group: Optional[str] = None,
         optimizer: Type[Optimizer] = Adam,
         loss_fn: nn.Module = nn.CrossEntropyLoss(),
         iterator_train: Type[DataLoader] = BalancedDataLoader,
@@ -174,12 +177,25 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
 
         self.wandb_project = wandb_project
         self.wandb_name = wandb_name
+        self.wandb_group = wandb_group
 
         # Replace this XOR-like expression?
         if (wandb_project is None) != (wandb_name is None):
             raise RuntimeError(
                 "Both wandb_project and wandb_name must be set or both must be None"
             )
+
+        try:
+            self.group_name = VibnetEstimator._group_name[self.wandb_group]
+        except KeyError:
+            now = datetime.now()
+            now_str = now.strftime("%d/%m/%Y %H:%M")
+            if self.wandb_group is not None:
+                group_name = f"{self.wandb_group} [{now_str}]"
+            else:
+                group_name = f"{now_str}"
+            self.group_name = group_name
+            VibnetEstimator._group_name[self.wandb_group] = group_name
 
         for k, v in kwargs.items():
             if not any(k.startswith(p) for p in VibnetEstimator._kwargs_prefixes):
@@ -268,7 +284,13 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             return None
         save_dir = tempfile.mkdtemp(prefix="vibnet_run-")
         name = add_index(self.wandb_name)
-        return WandbLogger(project=self.wandb_project, name=name, save_dir=save_dir)
+
+        return WandbLogger(
+            project=self.wandb_project,
+            name=name,
+            save_dir=save_dir,
+            group=self.group_name,
+        )
 
     @_no_lightning_logs
     def fit(self, X: DeepDataset | TrainDataset | Subset, y=None, **fit_params):

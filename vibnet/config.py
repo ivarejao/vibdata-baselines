@@ -164,6 +164,7 @@ class ConfigSklearn:
             self.config = yaml.safe_load(file)
 
         self.dataset: DeepDataset | None = None
+        self.group_name_ = ""
 
     def setup_model(self):
         name = self.config["model"]["name"]
@@ -208,12 +209,16 @@ class ConfigSklearn:
         num_workers = self.config.get("num_workers", 0)
 
         project_name = os.environ.get("WANDB_PROJECT", None)
-        run_name = self.config.get('run_name', None)
+        run_name = self.config.get("run_name", None)
         run_name = run_name if project_name is not None else None
+
+        dataset_name = self.config["dataset"]["name"]
+        model_name = self.config["model"]["name"]
 
         estimator = VibnetEstimator(
             wandb_project=project_name,
             wandb_name=run_name,
+            wandb_group=f"{dataset_name}/{model_name}",
             max_epochs=max_epochs,
             iterator_train__batch_size=batch_size,
             iterator_train__num_workers=num_workers,
@@ -226,7 +231,12 @@ class ConfigSklearn:
             accelerator="gpu" if torch.cuda.is_available() else "cpu",
             **estimator_parameters,
         )
+        self.group_name_ = estimator.group_name
         return estimator
+
+    @property
+    def group_name(self) -> str:
+        return self.group_name_
 
     def __repr__(self):
         return yaml.dump(self.config, default_flow_style=False)
