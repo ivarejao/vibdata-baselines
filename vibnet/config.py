@@ -6,7 +6,10 @@ import vibdata.raw as datasets
 import vibdata.deep.signal.transforms as deep_transforms
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 
+import vibnet.data.resampling as resampler_pkg
 from vibnet.models.model import Model
+
+RESAMPLING_DATASETS = {"IMS", "XJTU"}
 
 
 class Config:
@@ -105,5 +108,9 @@ class Config:
         transforms = deep_transforms.Sequential([getattr(deep_transforms, t["name"])(**t["parameters"]) for t in transforms_config])
         # Convert the raw dataset to deepdataset
         convertDataset(dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir)
-        dataset = DeepDataset(deep_root_dir, transforms)
+        dataset = DeepDataset(deep_root_dir)
+        # Resample the dataset if is needed
+        if dataset_name in RESAMPLING_DATASETS:
+            resampler = getattr(resampler_pkg, "Resampler" + dataset_name)()
+            dataset = resampler.resample(dataset)
         return dataset
