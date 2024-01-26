@@ -6,7 +6,9 @@ default:
        - poetry install
 stages:
     - formatting
+
 formatting:
+    stage: formatting
     script:
         - poetry run isort --check-only vibdata/ tests/
         - poetry run black --check vibdata/ tests/
