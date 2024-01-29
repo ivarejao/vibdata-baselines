@@ -1,26 +1,32 @@
 import os
-from typing import Any, Type
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Optional, Type
 
-import yaml
 import numpy as np
 import torch
-import vibdata.raw as datasets
 import vibdata.deep.signal.transforms as deep_transforms
+import vibdata.raw as datasets
+import yaml
 from sklearn.base import BaseEstimator
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.pipeline import Pipeline
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 
 import vibnet.data.resampling as resampler_pkg
+from vibnet.models.Alexnet1d import alexnet
 from vibnet.models.M5 import M5
 from vibnet.models.model import Model
-from vibnet.utils.sklearn import SingleSplit, TrainDataset, VibnetEstimator, VibnetStandardScaler
 from vibnet.models.Resnet1d import resnet18, resnet34
-from vibnet.models.Alexnet1d import alexnet
+from vibnet.utils.sklearn import (
+    SingleSplit,
+    TrainDataset,
+    VibnetEstimator,
+    VibnetStandardScaler,
+)
 
 __all__ = ["Config", "ConfigSklearn"]
 
@@ -84,17 +90,13 @@ class Config:
             if key in opt_params:
                 opt_params[key] = value
 
-        return getattr(torch.optim, self.config["optimizer"]["name"])(
-            model_parameters, **opt_params
-        )
+        return getattr(torch.optim, self.config["optimizer"]["name"])(model_parameters, **opt_params)
 
     def get_lr_scheduler(self, optimizer: torch.optim.Optimizer):
         lr_schedulers = []
         for scheduler in self.config["lr_scheduler"]:
             lr_schedulers.append(
-                getattr(torch.optim.lr_scheduler, scheduler["name"])(
-                    optimizer, **scheduler["parameters"]
-                )
+                getattr(torch.optim.lr_scheduler, scheduler["name"])(optimizer, **scheduler["parameters"])
             )
         return lr_schedulers
 
@@ -121,13 +123,9 @@ class Config:
         raw_root_dir = self.config["dataset"]["raw"]["root"]
         raw_dataset_package = getattr(datasets, dataset_name)
         raw_dataset_module = getattr(raw_dataset_package, dataset_name)
-        raw_dataset = getattr(raw_dataset_module, dataset_name + "_raw")(
-            raw_root_dir, download=True
-        )
+        raw_dataset = getattr(raw_dataset_module, dataset_name + "_raw")(raw_root_dir, download=True)
 
-        deep_root_dir = os.path.join(
-            self.config["dataset"]["deep"]["root"], dataset_name
-        )
+        deep_root_dir = os.path.join(self.config["dataset"]["deep"]["root"], dataset_name)
         # Get the transforms to be applied
         transforms_config = self.config["dataset"]["deep"]["transforms"]
         transforms = deep_transforms.Sequential(
@@ -184,10 +182,15 @@ class ConfigSklearn:
             self.config = yaml.safe_load(file)
 
         self.dataset: DeepDataset | None = None
-        self.group_name_ = ""
+
+        dataset_name = self.config["dataset"]["name"]
+        model_name = self.config["model"]["name"]
+        now = datetime.now()
+        now_str = now.strftime("%d/%m/%Y %H:%M")
+        self.group_name_ = f"{dataset_name}/{model_name} [{now_str}]"
 
     @property
-    def group_name(self) -> str:
+    def group_name(self) -> Optional[str]:
         return self.group_name_
 
     def __repr__(self):
@@ -212,25 +215,16 @@ class ConfigSklearn:
         raw_root_dir = self.config["dataset"]["raw"]["root"]
         raw_dataset_package = getattr(datasets, dataset_name)
         raw_dataset_module = getattr(raw_dataset_package, dataset_name)
-        raw_dataset = getattr(raw_dataset_module, dataset_name + "_raw")(
-            raw_root_dir, download=True
-        )
+        raw_dataset = getattr(raw_dataset_module, dataset_name + "_raw")(raw_root_dir, download=True)
 
-        deep_root_dir = os.path.join(
-            self.config["dataset"]["deep"]["root"], dataset_name
-        )
+        deep_root_dir = os.path.join(self.config["dataset"]["deep"]["root"], dataset_name)
         # Get the transforms to be applied
         transforms_config = self.config["dataset"]["deep"]["transforms"]
         transforms = deep_transforms.Sequential(
-            [
-                getattr(deep_transforms, t["name"])(**t["parameters"])
-                for t in transforms_config
-            ]
+            [getattr(deep_transforms, t["name"])(**t["parameters"]) for t in transforms_config]
         )
         # Convert the raw dataset to deepdataset
-        convertDataset(
-            dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir
-        )
+        convertDataset(dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir)
         self.dataset = DeepDataset(deep_root_dir, transforms)
         return self.dataset
 
@@ -252,17 +246,11 @@ class ConfigSklearn:
 
         model_config = self.config["model"]
         estimator_parameters["module"] = _get_model_class(model_config["name"])
-        estimator_parameters.update(
-            {"module__" + k: v for k, v in model_config["parameters"].items()}
-        )
+        estimator_parameters.update({"module__" + k: v for k, v in model_config["parameters"].items()})
 
         optimizer_config = self.config["optimizer"]
-        estimator_parameters["optimizer"] = getattr(
-            torch.optim, optimizer_config["name"]
-        )
-        estimator_parameters.update(
-            {"optimizer__" + k: v for k, v in optimizer_config["parameters"].items()}
-        )
+        estimator_parameters["optimizer"] = getattr(torch.optim, optimizer_config["name"])
+        estimator_parameters.update({"optimizer__" + k: v for k, v in optimizer_config["parameters"].items()})
 
         # Extra parameters
         max_epochs = self.config["epochs"]
@@ -330,7 +318,7 @@ class ConfigSklearn:
             feats = feats.cpu().numpy().flatten()
             X.append(feats)
 
-        X = np.vstack(feats)
+        X = np.vstack(X)
         y = traindataset.targets
         return X, y
 
