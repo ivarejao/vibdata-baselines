@@ -42,7 +42,8 @@ def main(cfg: Path):
         "cv": LeaveOneGroupOut(),
     }
     if config.is_deep_learning:
-        cross_validate_args.update({"X": TrainDataset(dataset), "y": dataset.targets})
+        train_dataset = TrainDataset(dataset)
+        cross_validate_args.update({"X": train_dataset, "y": train_dataset.targets})
     else:
         X, y = config.get_dataset()
         cross_validate_args.update({"X": X, "y": y})
