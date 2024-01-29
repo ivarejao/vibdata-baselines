@@ -1,22 +1,17 @@
 import os
-from dataclasses import dataclass
-from pathlib import Path
 from typing import List
+from pathlib import Path
+from dataclasses import dataclass
 
 import numpy as np
 from dotenv import load_dotenv
+from sklearn.metrics import classification_report, balanced_accuracy_score
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import balanced_accuracy_score, classification_report
-from sklearn.model_selection import (
-    GridSearchCV,
-    LeaveOneGroupOut,
-    StratifiedKFold,
-    cross_val_predict,
-)
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, LeaveOneGroupOut, cross_val_predict
 from vibdata.deep.DeepDataset import DeepDataset
 
-import vibnet.data.group_dataset as groups_module
 import wandb
+import vibnet.data.group_dataset as groups_module
 from vibnet.config import Config
 
 
@@ -43,9 +38,7 @@ def get_features(dataset: DeepDataset) -> (List[int], List[int]):
     return X, y
 
 
-def classifier_biased(
-    cfg: Config, inputs: List[int], labels: List[int], groups: List[int]
-) -> List[int]:
+def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
     parameters = cfg["params_grid"]
 
@@ -69,9 +62,7 @@ def classifier_biased(
     return y_pred
 
 
-def classifier_unbiased(
-    cfg: Config, inputs: List[int], labels: List[int], groups: List[int]
-) -> List[int]:
+def classifier_unbiased(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
     parameters = cfg["params_grid"]
 
@@ -87,9 +78,7 @@ def classifier_unbiased(
     )
 
     cv_outer = LeaveOneGroupOut()
-    y_pred = cross_val_predict(
-        clf, inputs, labels, groups=groups, cv=cv_outer, fit_params={"groups": groups}
-    )
+    y_pred = cross_val_predict(clf, inputs, labels, groups=groups, cv=cv_outer, fit_params={"groups": groups})
 
     return y_pred
 
@@ -102,9 +91,7 @@ def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int]) -> None:
     print(f"Balanced accuracy: {balanced_accuracy_score(y_true, y_pred):.2f}")
 
 
-def configure_wandb(
-    run_name: str, cfg: Config, cfg_path: str, groups: List[int], args
-) -> None:
+def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int], args) -> None:
     wandb.login(key=os.environ["WANDB_KEY"])
     wandb.init(
         # Set the project where this run will be logged
@@ -133,9 +120,7 @@ def main(cfg: Path, biased: bool):
     dataset_name = cfg["dataset"]["name"]
     dataset = cfg.get_dataset()
 
-    group_obj = getattr(groups_module, "Group" + dataset_name)(
-        dataset=dataset, config=cfg
-    )
+    group_obj = getattr(groups_module, "Group" + dataset_name)(dataset=dataset, config=cfg)
     groups = group_obj.groups()
 
     configure_wandb(dataset_name, cfg, cfg_path, groups, args)

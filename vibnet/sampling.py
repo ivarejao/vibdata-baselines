@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import numpy.typing as npt
 from torch.utils.data import Subset, Dataset, DataLoader, BatchSampler, SequentialSampler
-from sklearn.model_selection import LeaveOneGroupOut, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, LeaveOneGroupOut
 
 import vibnet.data.group_dataset as groups_module
 from vibnet.config import Config
@@ -15,9 +15,7 @@ from vibnet.utils.MemeDataset import MemeDataset
 
 class DataSampling:
     def __init__(self, original_dataset: Dataset, config: Config, args: Namespace) -> None:
-
-        group_obj = getattr(groups_module, "Group" + config["dataset"]["name"])(dataset=original_dataset,
-                                                                                config=config)
+        group_obj = getattr(groups_module, "Group" + config["dataset"]["name"])(dataset=original_dataset, config=config)
         groups = group_obj.groups()
 
         self.dataset = MemeDataset(original_dataset)
@@ -25,7 +23,7 @@ class DataSampling:
         # Define the folds
         if args.biased:
             num_folds = len(set(groups))
-            stratKFold = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=config['seed'])
+            stratKFold = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=config["seed"])
             X, y = zip(*self.dataset)
             self.folds = [fold_ids for _, fold_ids in stratKFold.split(X=X, y=y)]
 

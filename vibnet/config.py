@@ -1,34 +1,32 @@
 import os
-from pathlib import Path
 from typing import Any, Type
+from pathlib import Path
 
+import yaml
 import numpy as np
 import torch
-import vibdata.deep.signal.transforms as deep_transforms
 import vibdata.raw as datasets
-import yaml
+import vibdata.deep.signal.transforms as deep_transforms
 from sklearn.base import BaseEstimator
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 
-from vibnet.models.Alexnet1d import alexnet
+import vibnet.data.resampling as resampler_pkg
 from vibnet.models.M5 import M5
 from vibnet.models.model import Model
+from vibnet.utils.sklearn import SingleSplit, TrainDataset, VibnetEstimator, VibnetStandardScaler
 from vibnet.models.Resnet1d import resnet18, resnet34
-from vibnet.utils.sklearn import (
-    SingleSplit,
-    TrainDataset,
-    VibnetEstimator,
-    VibnetStandardScaler,
-)
+from vibnet.models.Alexnet1d import alexnet
 
 __all__ = ["Config", "ConfigSklearn"]
 
 _DEEP_MODELS = ["alexnet", "resnet18", "resnet34", "xresnet18", "m5", "resnet18-tsai"]
+
+RESAMPLING_DATASETS = {"IMS", "XJTU"}
 
 
 class Config:
@@ -133,16 +131,15 @@ class Config:
         # Get the transforms to be applied
         transforms_config = self.config["dataset"]["deep"]["transforms"]
         transforms = deep_transforms.Sequential(
-            [
-                getattr(deep_transforms, t["name"])(**t["parameters"])
-                for t in transforms_config
-            ]
+            [getattr(deep_transforms, t["name"])(**t["parameters"]) for t in transforms_config]
         )
         # Convert the raw dataset to deepdataset
-        convertDataset(
-            dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir
-        )
-        dataset = DeepDataset(deep_root_dir, transforms)
+        convertDataset(dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir)
+        dataset = DeepDataset(deep_root_dir)
+        # Resample the dataset if is needed
+        if dataset_name in RESAMPLING_DATASETS:
+            resampler = getattr(resampler_pkg, "Resampler" + dataset_name)()
+            dataset = resampler.resample(dataset)
         return dataset
 
 

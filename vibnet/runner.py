@@ -15,9 +15,9 @@ from torch.cuda.amp.grad_scaler import GradScaler
 import wandb
 from vibnet.config import Config
 from vibnet.sampling import DataSampling
-from vibnet.utils.report import ReportDict
 from vibnet.experiment import Experiment
 from vibnet.models.model import Model
+from vibnet.utils.report import ReportDict
 
 
 class ExpRunner:
