@@ -1,0 +1,23 @@
+seed: 42
+model:
+  name: knn
+  output_param: out_channel
+  parameters:
+    n_jobs: 10
+dataset:
+  name: CWRU
+  groups_dir: "data/groups"
+  raw:
+    root: "data/raw_datasets"
+  deep:
+    root: "data/feats_datasets"
+    transforms:
+      - name: SplitSampleRate
+        parameters:
+          on_field: signal
+      - name: FeatureExtractor
+        parameters:
+          features: ["Kurtosis", "RootMeanSquare", "StandardDeviation", "Mean", "LogAttackTime", "TemporalDecrease", "TemporalCentroid", "EffectiveDuration", "ZeroCrossingRate"]
+params_grid:
+  n_neighbors: [5, 7, 9, 11]
+  p: [1, 2]
