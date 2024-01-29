@@ -1,21 +1,34 @@
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Type
 
 import numpy as np
 import torch
 import vibdata.deep.signal.transforms as deep_transforms
 import vibdata.raw as datasets
 import yaml
+from sklearn.base import BaseEstimator
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 
 from vibnet.models.Alexnet1d import alexnet
 from vibnet.models.M5 import M5
 from vibnet.models.model import Model
 from vibnet.models.Resnet1d import resnet18, resnet34
-from vibnet.utils.sklearn import SingleSplit, TrainDataset, VibnetEstimator
+from vibnet.utils.sklearn import (
+    SingleSplit,
+    TrainDataset,
+    VibnetEstimator,
+    VibnetStandardScaler,
+)
 
 __all__ = ["Config", "ConfigSklearn"]
+
+_DEEP_MODELS = ["alexnet", "resnet18", "resnet34", "xresnet18", "m5", "resnet18-tsai"]
 
 
 class Config:
@@ -157,6 +170,16 @@ def _get_model_class(name: str):
             raise RuntimeError(f"Unknown model {name}")
 
 
+def _get_sklearn_class(name: str) -> Type[BaseEstimator]:
+    match name:
+        case "randomforest":
+            return RandomForestClassifier
+        case "knn":
+            return KNeighborsClassifier
+        case _:
+            raise RuntimeError(f"Unknown model {name}")
+
+
 class ConfigSklearn:
     def __init__(self, config_path: str | Path, args=None):
         self.config = {}
@@ -166,18 +189,64 @@ class ConfigSklearn:
         self.dataset: DeepDataset | None = None
         self.group_name_ = ""
 
-    def setup_model(self):
-        name = self.config["model"]["name"]
-        parameters = self.config["model"]["parameters"]
-        output_param_name = self.config["model"]["output_param"]
+    @property
+    def group_name(self) -> str:
+        return self.group_name_
 
-        # TODO: improve it by only calling one time this funcion
-        dataset: DeepDataset = self.get_dataset()
-        parameters[output_param_name] = len(dataset.get_labels())
+    def __repr__(self):
+        return yaml.dump(self.config, default_flow_style=False)
 
-        self.model_constructor = Model(name, **parameters)
+    def __getitem__(self, item):
+        return self.config[item]
 
-    def get_estimator(self) -> VibnetEstimator:
+    def __contains__(self, item):
+        return item in self.config
+
+    def get_yaml(self) -> dict[str, Any]:
+        return self.config
+
+    def _get_dataset_deep(self) -> DeepDataset:
+        if self.dataset is not None:
+            return self.dataset
+
+        dataset_name = self.config["dataset"]["name"]
+
+        # Get raw root_dir
+        raw_root_dir = self.config["dataset"]["raw"]["root"]
+        raw_dataset_package = getattr(datasets, dataset_name)
+        raw_dataset_module = getattr(raw_dataset_package, dataset_name)
+        raw_dataset = getattr(raw_dataset_module, dataset_name + "_raw")(
+            raw_root_dir, download=True
+        )
+
+        deep_root_dir = os.path.join(
+            self.config["dataset"]["deep"]["root"], dataset_name
+        )
+        # Get the transforms to be applied
+        transforms_config = self.config["dataset"]["deep"]["transforms"]
+        transforms = deep_transforms.Sequential(
+            [
+                getattr(deep_transforms, t["name"])(**t["parameters"])
+                for t in transforms_config
+            ]
+        )
+        # Convert the raw dataset to deepdataset
+        convertDataset(
+            dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir
+        )
+        self.dataset = DeepDataset(deep_root_dir, transforms)
+        return self.dataset
+
+    def _add_scaler(self, estimator: BaseEstimator) -> Pipeline:
+        if self.is_deep_learning:
+            scaler = VibnetStandardScaler(verbose=True)
+        else:
+            scaler = StandardScaler()
+
+        pipeline = Pipeline([("scaler", scaler), ("classifier", estimator)])
+        return pipeline
+
+    def _get_estimator_deep(self) -> VibnetEstimator:
         dataset = self.get_dataset()
         wrapped_dataset = TrainDataset(dataset)
         targets = wrapped_dataset.targets
@@ -234,50 +303,55 @@ class ConfigSklearn:
         self.group_name_ = estimator.group_name
         return estimator
 
+    def _get_estimator_ml(self) -> BaseEstimator:
+        model_config = self.config["model"]
+        model_class = _get_sklearn_class(model_config["name"])
+        model_class_parameters = model_config.get("parameters", {})
+        estimator = model_class(**model_class_parameters)
+
+        parameter_grid = self.config.get("params_grid", None)
+        if parameter_grid is not None:
+            cv = StratifiedKFold(10, shuffle=False)
+            estimator = GridSearchCV(
+                estimator,
+                param_grid=parameter_grid,
+                cv=cv,
+                n_jobs=-5,
+                scoring="f1_macro",
+            )
+
+        return estimator
+
+    def _get_dataset_ml(self) -> tuple[np.ndarray, np.ndarray]:
+        deepdataset = self._get_dataset_deep()
+        traindataset = TrainDataset(deepdataset, standardize=True)
+
+        X = []
+        length = len(traindataset)
+        for i in range(length):
+            feats, _ = traindataset[i]
+            feats = feats.cpu().numpy().flatten()
+            X.append(feats)
+
+        X = np.vstack(feats)
+        y = traindataset.targets
+        return X, y
+
     @property
-    def group_name(self) -> str:
-        return self.group_name_
+    def is_deep_learning(self) -> bool:
+        return self.config["model"]["name"] in _DEEP_MODELS
 
-    def __repr__(self):
-        return yaml.dump(self.config, default_flow_style=False)
+    def get_estimator(self) -> BaseEstimator:
+        if self.is_deep_learning:
+            estimator = self._get_estimator_deep()
+        else:
+            estimator = self._get_estimator_ml()
 
-    def __getitem__(self, item):
-        return self.config[item]
+        pipeline = self._add_scaler(estimator)
+        return pipeline
 
-    def __contains__(self, item):
-        return item in self.config
-
-    def get_yaml(self) -> dict[str, Any]:
-        return self.config
-
-    def get_dataset(self) -> DeepDataset:
-        if self.dataset is not None:
-            return self.dataset
-
-        dataset_name = self.config["dataset"]["name"]
-
-        # Get raw root_dir
-        raw_root_dir = self.config["dataset"]["raw"]["root"]
-        raw_dataset_package = getattr(datasets, dataset_name)
-        raw_dataset_module = getattr(raw_dataset_package, dataset_name)
-        raw_dataset = getattr(raw_dataset_module, dataset_name + "_raw")(
-            raw_root_dir, download=True
-        )
-
-        deep_root_dir = os.path.join(
-            self.config["dataset"]["deep"]["root"], dataset_name
-        )
-        # Get the transforms to be applied
-        transforms_config = self.config["dataset"]["deep"]["transforms"]
-        transforms = deep_transforms.Sequential(
-            [
-                getattr(deep_transforms, t["name"])(**t["parameters"])
-                for t in transforms_config
-            ]
-        )
-        # Convert the raw dataset to deepdataset
-        convertDataset(
-            dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir
-        )
-        self.dataset = DeepDataset(deep_root_dir, transforms)
-        return self.dataset
+    def get_dataset(self) -> DeepDataset | tuple[np.ndarray, np.ndarray]:
+        if self.is_deep_learning:
+            return self._get_dataset_deep()
+        else:
+            return self._get_dataset_ml()
