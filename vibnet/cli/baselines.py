@@ -4,7 +4,6 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import numpy as np
-import typer
 from dotenv import load_dotenv
 from sklearn.metrics import classification_report, balanced_accuracy_score
 from sklearn.ensemble import RandomForestClassifier
@@ -14,8 +13,6 @@ from vibdata.deep.DeepDataset import DeepDataset
 import wandb
 import vibnet.data.group_dataset as groups_module
 from vibnet.config import Config
-
-app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 # TODO: This class exists for compatibility with `Config`
@@ -114,11 +111,7 @@ def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int]
     wandb.save(cfg_path, policy="now")
 
 
-@app.command()
-def main(
-    cfg: Path = typer.Option(help="Config file"),
-    biased: bool = typer.Option(False, help="Use biased classifier"),
-):
+def main(cfg: Path, biased: bool):
     args = Args(cfg=cfg, biased=biased, unbiased=not biased)
     load_dotenv()
     cfg_path = cfg
