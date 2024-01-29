@@ -5,17 +5,12 @@ from pathlib import Path
 import pandas as pd
 from rich import print
 from sklearn.model_selection import LeaveOneGroupOut, cross_validate
-from sklearn.pipeline import Pipeline
 
 import wandb
 from vibnet.config import ConfigSklearn
-from vibnet.utils.sklearn import TrainDataset, VibnetStandardScaler
+from vibnet.utils.sklearn import TrainDataset
 
 from .common import group_class, is_logged, set_deterministic, wandb_login
-
-
-def _main_deep(config: ConfigSklearn) -> pd.DataFrame:
-    pass
 
 
 def main(cfg: Path):
@@ -36,7 +31,7 @@ def main(cfg: Path):
     dataset_name = config["dataset"]["name"]
     dataset = config.get_deepdataset()
     group_obj = group_class(dataset_name)(dataset=dataset, config=config)
-    groups = group_obj.groups().reshape(-1)
+    groups = group_obj.groups().reshape(-1).astype(int)
 
     pipeline = config.get_estimator()
     cross_validate_args = {
