@@ -14,6 +14,10 @@ from vibnet.utils.sklearn import TrainDataset, VibnetStandardScaler
 from .common import group_class, is_logged, set_deterministic, wandb_login
 
 
+def _main_deep(config: ConfigSklearn) -> pd.DataFrame:
+    pass
+
+
 def main(cfg: Path):
     actual_datetime = datetime.now()
 
@@ -30,25 +34,25 @@ def main(cfg: Path):
         print("[bold red]Alert![/bold red] Seed was not set!")
 
     dataset_name = config["dataset"]["name"]
-    dataset = config.get_dataset()
+    dataset = config.get_deepdataset()
     group_obj = group_class(dataset_name)(dataset=dataset, config=config)
     groups = group_obj.groups().reshape(-1)
 
-    estimator = config.get_estimator()
-    pipeline = Pipeline(
-        [("scaler", VibnetStandardScaler(verbose=True)), ("classifier", estimator)]
-    )
-    dataset = TrainDataset(dataset)
-    cv = LeaveOneGroupOut()
-    results = cross_validate(
-        pipeline,
-        dataset,
-        dataset.targets,
-        groups=groups,
-        cv=cv,
-        scoring=["accuracy", "f1_macro", "balanced_accuracy"],
-        verbose=4,
-    )
+    pipeline = config.get_estimator()
+    cross_validate_args = {
+        "estimator": pipeline,
+        "groups": groups,
+        "scoring": ["accuracy", "f1_macro", "balanced_accuracy"],
+        "verbose": 4,
+        "cv": LeaveOneGroupOut(),
+    }
+    if config.is_deep_learning:
+        cross_validate_args.update({"X": TrainDataset(dataset), "y": dataset.targets})
+    else:
+        X, y = config.get_dataset()
+        cross_validate_args.update({"X": X, "y": y})
+
+    results = cross_validate(**cross_validate_args)
 
     df = pd.DataFrame(results)
     df = df.rename_axis("fold", axis="index")

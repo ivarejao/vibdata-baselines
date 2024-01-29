@@ -355,3 +355,6 @@ class ConfigSklearn:
             return self._get_dataset_deep()
         else:
             return self._get_dataset_ml()
+
+    def get_deepdataset(self) -> DeepDataset:
+        return self._get_dataset_deep()
