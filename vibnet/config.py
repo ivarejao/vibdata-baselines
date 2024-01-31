@@ -225,7 +225,11 @@ class ConfigSklearn:
         )
         # Convert the raw dataset to deepdataset
         convertDataset(dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir)
-        self.dataset = DeepDataset(deep_root_dir, transforms)
+        dataset = DeepDataset(deep_root_dir, transforms)
+        # Resample the dataset if is needed
+        if dataset_name in RESAMPLING_DATASETS:
+            resampler = getattr(resampler_pkg, "Resampler" + dataset_name)()
+            dataset = resampler.resample(dataset)
         return self.dataset
 
     def _add_scaler(self, estimator: BaseEstimator) -> Pipeline:
