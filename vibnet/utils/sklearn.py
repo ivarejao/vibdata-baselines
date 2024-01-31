@@ -8,7 +8,7 @@ from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Callable, Literal, Optional, Type
+from typing import Any, Callable, Iterator, Literal, Optional, Type
 from zipfile import ZipFile
 
 import lightning as L
@@ -78,6 +78,11 @@ class TrainDataset(MemeDataset, _SklearnCompatibleDataset):
 
         return Subset(self, idx)
 
+    def __iter__(self) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+        n = len(self)
+        for i in range(n):
+            yield self[i]
+
 
 class PredictDataset(Dataset):
     """Useful for test fold"""
@@ -146,9 +151,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         train_split: Optional[SingleSplit] = None,
         accelerator: Literal["cpu", "gpu"] = "cpu",
         devices: int | Literal["auto"] = "auto",
-        precision: Optional[
-            Literal[64, 32, 16] | Literal["64", "32", "16", "bf16-mixed"]
-        ] = None,
+        precision: Optional[Literal[64, 32, 16] | Literal["64", "32", "16", "bf16-mixed"]] = None,
         max_epochs: int = 1,
         fast_dev_run: int | bool = False,
         strategy: str | Strategy = "auto",
@@ -181,9 +184,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
 
         # Replace this XOR-like expression?
         if (wandb_project is None) != (wandb_name is None):
-            raise RuntimeError(
-                "Both wandb_project and wandb_name must be set or both must be None"
-            )
+            raise RuntimeError("Both wandb_project and wandb_name must be set or both must be None")
 
         try:
             self.group_name = VibnetEstimator._group_name[self.wandb_group]
@@ -250,9 +251,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             deterministic=True,
         )
 
-    def _dataloaders(
-        self, X: DeepDataset | TrainDataset | Subset
-    ) -> tuple[DataLoader, Optional[DataLoader]]:
+    def _dataloaders(self, X: DeepDataset | TrainDataset | Subset) -> tuple[DataLoader, Optional[DataLoader]]:
         """train/validation dataloaders"""
 
         if isinstance(X, DeepDataset):
@@ -331,18 +330,14 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         )
 
     @_no_lightning_logs
-    def predict_proba(
-        self, X: DeepDataset | TrainDataset | MemeDataset | Subset
-    ) -> np.ndarray[float]:
+    def predict_proba(self, X: DeepDataset | TrainDataset | MemeDataset | Subset) -> np.ndarray[float]:
         check_is_fitted(self)
         dataset = PredictDataset(X)
         trainer = self._create_predict_trainer()
         valid_params = self._iterator_valid_params()
         dataloader = self.iterator_valid(dataset, **valid_params)
         predictions = trainer.predict(self.module_, dataloader)
-        predictions = [
-            p.softmax(axis=1).to(torch.float32).cpu().numpy() for p in predictions
-        ]
+        predictions = [p.softmax(axis=1).to(torch.float32).cpu().numpy() for p in predictions]
         return np.vstack(predictions)
 
     def predict(self, X: DeepDataset | TrainDataset | MemeDataset | Subset):
@@ -352,9 +347,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
 
 
 class ScaledDataset(Dataset, _SklearnCompatibleDataset):
-    def __init__(
-        self, base_dataset: TrainDataset | Subset, tmp_dir: TemporaryDirectory
-    ):
+    def __init__(self, base_dataset: TrainDataset | Subset, tmp_dir: TemporaryDirectory):
         self.base_dataset = base_dataset
         self.tmp_dir = tmp_dir
         self.zip_path = Path(tmp_dir.name) / "scaled_signals.zip"
