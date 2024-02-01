@@ -8,6 +8,7 @@ from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import EllipsisType
 from typing import Any, Callable, Iterator, Literal, Optional, Type
 from zipfile import ZipFile
 
@@ -71,12 +72,32 @@ class _SklearnCompatibleDataset:
 class TrainDataset(MemeDataset, _SklearnCompatibleDataset):
     """Dataset that can be splitted into a subset. Useful for folding"""
 
-    def __getitem__(self, idx: int | np.ndarray[np.int64] | list[int]):
+    def __getitem__(self, idx: int | np.ndarray[np.int64] | list[int] | tuple[np.ndarray[np.int64], EllipsisType]):
         if isinstance(idx, numbers.Integral):  # works with int, np.int64, ...
             X, y = super().__getitem__(idx)
             return torch.tensor(X, dtype=torch.float32), torch.tensor(y)
 
-        return Subset(self, idx)
+        if isinstance(idx, (np.ndarray, list)):
+            indices = idx
+        elif isinstance(idx, tuple):
+            try:
+                possible_indices, possible_ellipsis = idx
+            except Exception:
+                size = len(idx)
+                raise ValueError(f"Tuple must be of size 2, not {size}")
+
+            if possible_ellipsis != ...:
+                raise ValueError(f"Second element of tuple must be ellipsis, not {possible_ellipsis}")
+            elif not isinstance(possible_indices, (np.ndarray, list)):
+                t = type(possible_indices)
+                raise ValueError(f"First element of tuple must be ndarray or list, not {t}")
+
+            indices = possible_indices
+        else:
+            t = type(idx)
+            raise ValueError(f"Indices of type {t} not supported")
+
+        return Subset(self, indices)
 
     def __iter__(self) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         n = len(self)
