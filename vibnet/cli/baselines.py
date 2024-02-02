@@ -25,20 +25,13 @@ class Args:
 
 
 def get_features(dataset: DeepDataset) -> (List[int], List[int]):
-    X = np.empty([len(dataset), 9])
-    y = np.empty([len(dataset)], dtype=np.int8)
-
-    for i, sample in enumerate(dataset):
-        features = []
-        for feature in sample["features"].values():
-            features.append(feature)
-        X[i] = features
-        y[i] = sample["metainfo"]["label"].iloc[0]
+    X = [sample["signal"][0] for sample in dataset]
+    y = [sample["metainfo"]["label"] for sample in dataset]
 
     return X, y
 
 
-def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
+def classifier_biased(cfg: Config, inputs: List[List[float]], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
     parameters = cfg["params_grid"]
 
@@ -62,7 +55,7 @@ def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups:
     return y_pred
 
 
-def classifier_unbiased(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
+def classifier_unbiased(cfg: Config, inputs: List[List[float]], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
     parameters = cfg["params_grid"]
 
@@ -123,7 +116,7 @@ def main(cfg: Path, biased: bool):
     group_obj = getattr(groups_module, "Group" + dataset_name)(dataset=dataset, config=cfg)
     groups = group_obj.groups()
 
-    configure_wandb(dataset_name, cfg, cfg_path, groups, args)
+    configure_wandb(dataset_name, cfg, str(cfg_path), groups, args)
 
     X, y = get_features(dataset)
 
