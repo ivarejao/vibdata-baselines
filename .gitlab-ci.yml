@@ -1,15 +1,23 @@
 default:
     image: python:3.10
     before_script:
-       - pip install -U pip
-       - pip install poetry 
+       # See https://stackoverflow.com/a/38570269
+       - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+       - eval $(ssh-agent -s)
+       - mkdir -p ~/.ssh
+       - echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+       - echo "$SSH_PRIVATE_KEY" | base64 -d | ssh-add -
+       # Dependencies
+       - pip install --quiet -U pip
+       - pip install --quiet poetry 
+       - poetry install --quiet
 stages:
     - formatting
 
 formatting:
     stage: formatting
     script:
-        - poetry run isort --check-only vibdata/ tests/
-        - poetry run black --check vibdata/ tests/
+        - poetry run isort --check-only vibnet/ tests/
+        - poetry run black --check vibnet/ tests/
     only:
         - merge_requests
