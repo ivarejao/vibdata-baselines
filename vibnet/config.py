@@ -8,12 +8,13 @@ import numpy as np
 import torch
 import vibdata.raw as datasets
 import vibdata.deep.signal.transforms as deep_transforms
+from sklearn import model_selection as cross_validators
 from sklearn.base import BaseEstimator
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, BaseCrossValidator
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 
 import vibnet.data.resampling as resampler_pkg
@@ -256,8 +257,23 @@ class ConfigSklearn:
         # Extra parameters
         max_epochs = self.config["epochs"]
         batch_size = self.config["batch_size"]
+
         train_split = self.config.get("train_split", None)
-        train_split = SingleSplit(train_split) if train_split is not None else None
+        if train_split is not None:
+            if isinstance(train_split, int):
+                train_split = SingleSplit(train_split)
+            elif isinstance(train_split, dict):
+                split_type = train_split["type"]
+                params = train_split.get("parameters", {})
+                try:
+                    cv_class = getattr(cross_validators, split_type)
+                    if not issubclass(cv_class, BaseCrossValidator):
+                        raise ValueError(f"{split_type} is not a valid cross validation")
+                except Exception:
+                    raise ValueError(f"{split_type} is not a valid cross validation")
+                cv = cv_class(**params)
+                train_split = SingleSplit(cv)
+
         precision = self.config.get("precision", None)
         fast_dev_run = self.config.get("fast_dev_run", False)
         verbose = self.config.get("verbose", False)

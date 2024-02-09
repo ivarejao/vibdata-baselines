@@ -37,6 +37,9 @@ def main(cfg: Path):
     cross_validate_args = {
         "estimator": pipeline,
         "groups": groups,
+        "fit_params": {
+            "classifier__groups": groups,
+        },
         "scoring": ["accuracy", "f1_macro", "balanced_accuracy"],
         "verbose": 4,
         "cv": LeaveOneGroupOut(),
