@@ -2,11 +2,11 @@ import itertools
 
 import numpy as np
 import pytest
-from vibdata.deep.DeepDataset import DeepDataset, convertDataset
-from vibdata.deep.signal.transforms import NormalizeSampleRatePoly, SplitSampleRate
 from vibdata.raw import CWRU_raw
+from vibdata.deep.DeepDataset import DeepDataset, convertDataset
+from vibdata.deep.signal.transforms import SplitSampleRate, NormalizeSampleRatePoly
 
-from vibnet.utils.dataloaders import BalancedDataLoader, BalancedSampler
+from vibnet.utils.dataloaders import BalancedSampler, BalancedDataLoader
 from vibnet.utils.MemeDataset import MemeDataset
 
 

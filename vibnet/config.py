@@ -1,32 +1,27 @@
 import os
-from datetime import datetime
+from typing import Any, Type, Optional
 from pathlib import Path
-from typing import Any, Optional, Type
+from datetime import datetime
 
+import yaml
 import numpy as np
 import torch
-import vibdata.deep.signal.transforms as deep_transforms
 import vibdata.raw as datasets
-import yaml
+import vibdata.deep.signal.transforms as deep_transforms
 from sklearn.base import BaseEstimator
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 
 import vibnet.data.resampling as resampler_pkg
-from vibnet.models.Alexnet1d import alexnet
 from vibnet.models.M5 import M5
 from vibnet.models.model import Model
+from vibnet.utils.sklearn import SingleSplit, TrainDataset, VibnetEstimator, VibnetStandardScaler
 from vibnet.models.Resnet1d import resnet18, resnet34
-from vibnet.utils.sklearn import (
-    SingleSplit,
-    TrainDataset,
-    VibnetEstimator,
-    VibnetStandardScaler,
-)
+from vibnet.models.Alexnet1d import alexnet
 
 __all__ = ["Config", "ConfigSklearn"]
 
@@ -152,9 +147,9 @@ def _get_model_class(name: str):
         case "resnet34":
             resnet34
         case "xresnet18":
-            from tsai.models.XResNet1d import xresnet18
+            from tsai.models.XResNet1d import xresnet1d18
 
-            return xresnet18
+            return xresnet1d18
         case "m5":
             return M5
         case "resnet18-tsai":
@@ -225,7 +220,12 @@ class ConfigSklearn:
         )
         # Convert the raw dataset to deepdataset
         convertDataset(dataset=raw_dataset, transforms=transforms, dir_path=deep_root_dir)
-        self.dataset = DeepDataset(deep_root_dir, transforms)
+        dataset = DeepDataset(deep_root_dir)
+        # Resample the dataset if is needed
+        if dataset_name in RESAMPLING_DATASETS:
+            resampler = getattr(resampler_pkg, "Resampler" + dataset_name)()
+            dataset = resampler.resample(dataset)
+        self.dataset = dataset
         return self.dataset
 
     def _add_scaler(self, estimator: BaseEstimator) -> Pipeline:
@@ -247,6 +247,7 @@ class ConfigSklearn:
         model_config = self.config["model"]
         estimator_parameters["module"] = _get_model_class(model_config["name"])
         estimator_parameters.update({"module__" + k: v for k, v in model_config["parameters"].items()})
+        estimator_parameters.update({f"module__{model_config['output_param']}": num_classes})
 
         optimizer_config = self.config["optimizer"]
         estimator_parameters["optimizer"] = getattr(torch.optim, optimizer_config["name"])
@@ -269,6 +270,12 @@ class ConfigSklearn:
         dataset_name = self.config["dataset"]["name"]
         model_name = self.config["model"]["name"]
 
+        trainer_parameters = (
+            {f"trainer__{param}": value for param, value in self.config["trainer"].items()}
+            if "trainer" in self.config
+            else {}
+        )
+
         estimator = VibnetEstimator(
             wandb_project=project_name,
             wandb_name=run_name,
@@ -284,6 +291,7 @@ class ConfigSklearn:
             devices=1,
             accelerator="gpu" if torch.cuda.is_available() else "cpu",
             **estimator_parameters,
+            **trainer_parameters,
         )
         self.group_name_ = estimator.group_name
         return estimator

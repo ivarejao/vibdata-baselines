@@ -1,9 +1,9 @@
 import pytest
 from torch import nn
+from vibdata.raw import CWRU_raw
 from torch.utils.data import Subset
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
-from vibdata.deep.signal.transforms import NormalizeSampleRatePoly, SplitSampleRate
-from vibdata.raw import CWRU_raw
+from vibdata.deep.signal.transforms import SplitSampleRate, NormalizeSampleRatePoly
 
 from vibnet.utils.sklearn import SingleSplit, TrainDataset, VibnetEstimator
 

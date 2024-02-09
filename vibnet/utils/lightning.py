@@ -1,9 +1,9 @@
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Type, Optional
 
 import lightning as L
 from torch import nn
 from torch.optim import Optimizer
-from torchmetrics.classification import Accuracy, F1Score
+from torchmetrics.classification import F1Score, Accuracy
 
 
 class VibnetModule(L.LightningModule):
@@ -22,9 +22,7 @@ class VibnetModule(L.LightningModule):
         self.optimizer_params = optimizer_params
 
         self.val_acc = Accuracy(task="multiclass", num_classes=num_classes)
-        self.val_f1 = F1Score(
-            task="multiclass", num_classes=num_classes, average="macro"
-        )
+        self.val_f1 = F1Score(task="multiclass", num_classes=num_classes, average="macro")
 
     def forward(self, input):
         return self.network(input)
@@ -38,9 +36,7 @@ class VibnetModule(L.LightningModule):
         self.log("train/loss", loss)
         return loss
 
-    def validation_step(
-        self, batch, batch_idx: int, dataloader_idx: Optional[int] = None
-    ):
+    def validation_step(self, batch, batch_idx: int, dataloader_idx: Optional[int] = None):
         x, y = batch
         y = y.reshape(-1)
         z = self.network(x)

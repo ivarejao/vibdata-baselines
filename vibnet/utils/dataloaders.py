@@ -3,7 +3,7 @@ from typing import Iterator
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Subset, default_collate
+from torch.utils.data import Subset, DataLoader, default_collate
 from torch.utils.data.sampler import Sampler
 
 from vibnet.utils.MemeDataset import MemeDataset
@@ -42,9 +42,7 @@ class BalancedSampler(Sampler):
         for label in self.unique_labels:
             mask = self.labels == label
             label_indexes = indexes[mask]
-            sampled_indexes = self.rng.choice(
-                label_indexes, size=len(self) // self.n_labels
-            )
+            sampled_indexes = self.rng.choice(label_indexes, size=len(self) // self.n_labels)
             indexes_by_label.append(sampled_indexes)
 
         batch_indexes = np.vstack(indexes_by_label).T.reshape(-1)
@@ -60,9 +58,7 @@ def unsqueeze_collate(batch):
 
 
 class BalancedDataLoader(DataLoader):
-    def __init__(
-        self, dataset: MemeDataset | Subset, drop_last=False, sampler=None, **kwargs
-    ):
+    def __init__(self, dataset: MemeDataset | Subset, drop_last=False, sampler=None, **kwargs):
         sampler = BalancedSampler(dataset, random_state=10)
         super().__init__(dataset, sampler=sampler, drop_last=False, **kwargs)
 
