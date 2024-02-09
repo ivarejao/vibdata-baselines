@@ -2,8 +2,8 @@ from pathlib import Path
 
 import typer
 
-from .baselines import main as _main_baselines
 from .sklearn import main as _main_sklearn
+from .baselines import main as _main_baselines
 
 _app = typer.Typer(pretty_exceptions_show_locals=False)
 

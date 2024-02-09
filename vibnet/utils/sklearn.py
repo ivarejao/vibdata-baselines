@@ -1,34 +1,34 @@
+import sys
 import logging
 import numbers
-import sys
 import tempfile
 import warnings
-from collections import defaultdict
-from datetime import datetime
-from functools import wraps
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from types import EllipsisType
-from typing import Any, Callable, Iterator, Literal, Optional, Type
+from typing import Any, Type, Literal, Callable, Iterator, Optional
+from pathlib import Path
 from zipfile import ZipFile
+from datetime import datetime
+from tempfile import TemporaryDirectory
+from functools import wraps
+from collections import defaultdict
 
-import lightning as L
 import numpy as np
 import torch
-from lightning.pytorch.loggers.wandb import WandbLogger
-from lightning.pytorch.strategies import Strategy
+import lightning as L
+from torch import nn
+from tqdm.auto import tqdm
+from torch.optim import Adam, Optimizer
 from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
+from torch.utils.data import Subset, Dataset, DataLoader
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.validation import check_is_fitted
-from torch import nn
-from torch.optim import Adam, Optimizer
-from torch.utils.data import DataLoader, Dataset, Subset
-from tqdm.auto import tqdm
 from vibdata.deep.DeepDataset import DeepDataset
+from lightning.pytorch.strategies import Strategy
+from lightning.pytorch.loggers.wandb import WandbLogger
 
 import wandb
-from vibnet.utils.dataloaders import BalancedDataLoader, get_targets
 from vibnet.utils.lightning import VibnetModule
+from vibnet.utils.dataloaders import BalancedDataLoader, get_targets
 from vibnet.utils.MemeDataset import MemeDataset
 
 _run_name_counter = defaultdict(lambda: 0)
@@ -71,6 +71,9 @@ class _SklearnCompatibleDataset:
 
 class TrainDataset(MemeDataset, _SklearnCompatibleDataset):
     """Dataset that can be splitted into a subset. Useful for folding"""
+
+    def __init__(self, src_dataset: DeepDataset, standardize: bool = True):
+        super().__init__(src_dataset, standardize=True)
 
     def __getitem__(self, idx: int | np.ndarray[np.int64] | list[int] | tuple[np.ndarray[np.int64], EllipsisType]):
         if isinstance(idx, numbers.Integral):  # works with int, np.int64, ...
@@ -150,12 +153,7 @@ class SingleSplit:
 
 
 class VibnetEstimator(BaseEstimator, ClassifierMixin):
-    _kwargs_prefixes = [
-        "module__",
-        "optimizer__",
-        "iterator_train__",
-        "iterator_valid__",
-    ]
+    _kwargs_prefixes = ["module__", "optimizer__", "iterator_train__", "iterator_valid__", "trainer__"]
     _group_name = {}
 
     def __init__(
@@ -224,6 +222,9 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
                 raise TypeError("'{k}' is not a valid argument")
             setattr(self, k, v)
 
+    def _trainer_params(self) -> dict[str, Any]:
+        return self._params_prefix("trainer__")
+
     def _module_params(self) -> dict[str, Any]:
         return self._params_prefix("module__")
 
@@ -260,17 +261,20 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         )
 
     def _create_trainer(self) -> L.Trainer:
-        return L.Trainer(
-            accelerator=self.accelerator,
-            devices=self.devices,
-            precision=self.precision,
-            max_epochs=self.max_epochs,
-            fast_dev_run=self.fast_dev_run,
-            strategy=self.strategy,
-            enable_progress_bar=self.verbose,
-            logger=self._create_logger(),
-            deterministic=True,
-        )
+        trainer_params = {
+            "accelerator": self.accelerator,
+            "devices": self.devices,
+            "precision": self.precision,
+            "max_epochs": self.max_epochs,
+            "fast_dev_run": self.fast_dev_run,
+            "strategy": self.strategy,
+            "enable_progress_bar": self.verbose,
+            "logger": self._create_logger(),
+            "deterministic": True,
+        }
+        trainer_params.update(self._trainer_params())
+
+        return L.Trainer(**trainer_params)
 
     def _dataloaders(self, X: DeepDataset | TrainDataset | Subset) -> tuple[DataLoader, Optional[DataLoader]]:
         """train/validation dataloaders"""

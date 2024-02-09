@@ -1,6 +1,6 @@
 import os
-from datetime import datetime
 from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 from rich import print
@@ -10,7 +10,7 @@ import wandb
 from vibnet.config import ConfigSklearn
 from vibnet.utils.sklearn import TrainDataset
 
-from .common import group_class, is_logged, set_deterministic, wandb_login
+from .common import is_logged, group_class, wandb_login, set_deterministic
 
 
 def main(cfg: Path):
