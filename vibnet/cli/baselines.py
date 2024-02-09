@@ -4,13 +4,13 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import numpy as np
+import wandb
 from dotenv import load_dotenv
 from sklearn.metrics import classification_report, balanced_accuracy_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, LeaveOneGroupOut, cross_val_predict
 from vibdata.deep.DeepDataset import DeepDataset
 
-import wandb
 import vibnet.data.group_dataset as groups_module
 from vibnet.config import Config
 

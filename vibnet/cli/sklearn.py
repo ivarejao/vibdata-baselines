@@ -2,11 +2,11 @@ import os
 from pathlib import Path
 from datetime import datetime
 
+import wandb
 import pandas as pd
 from rich import print
 from sklearn.model_selection import LeaveOneGroupOut, cross_validate
 
-import wandb
 from vibnet.config import ConfigSklearn
 from vibnet.utils.sklearn import TrainDataset
 

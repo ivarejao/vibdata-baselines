@@ -14,6 +14,7 @@ from collections import defaultdict
 
 import numpy as np
 import torch
+import wandb
 import lightning as L
 from torch import nn
 from tqdm.auto import tqdm
@@ -26,7 +27,6 @@ from vibdata.deep.DeepDataset import DeepDataset
 from lightning.pytorch.strategies import Strategy
 from lightning.pytorch.loggers.wandb import WandbLogger
 
-import wandb
 from vibnet.utils.lightning import VibnetModule
 from vibnet.utils.dataloaders import BalancedDataLoader, get_targets
 from vibnet.utils.MemeDataset import MemeDataset
