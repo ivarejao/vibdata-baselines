@@ -147,7 +147,7 @@ class SingleSplit:
         """Return train and test indexes"""
         X = np.zeros([len(y), 1])  # fake dataset
 
-        for train_index, test_index in self.cv.split(X, y, groups):
+        for train_index, test_index in self.cv.split(X, y, groups=groups):
             # Uses only the first split
             return train_index, test_index
 
@@ -276,7 +276,9 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
 
         return L.Trainer(**trainer_params)
 
-    def _dataloaders(self, X: DeepDataset | TrainDataset | Subset) -> tuple[DataLoader, Optional[DataLoader]]:
+    def _dataloaders(
+        self, X: DeepDataset | TrainDataset | Subset, groups=None
+    ) -> tuple[DataLoader, Optional[DataLoader]]:
         """train/validation dataloaders"""
 
         if isinstance(X, DeepDataset):
@@ -292,7 +294,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             return dataloader, None
 
         targets = get_targets(dataset)
-        train_index, valid_index = self.train_split(X, targets)
+        train_index, valid_index = self.train_split(X, targets, groups=groups)
         train_dataset, valid_dataset = dataset[train_index], dataset[valid_index]
 
         train_params = self._iterator_train_params()
@@ -317,11 +319,11 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         )
 
     @_no_lightning_logs
-    def fit(self, X: DeepDataset | TrainDataset | Subset, y=None, **fit_params):
+    def fit(self, X: DeepDataset | TrainDataset | Subset, y=None, groups=None, **fit_params):
         model = self._create_module()
         trainer = self._create_trainer()
 
-        train_dl, valid_dl = self._dataloaders(X)
+        train_dl, valid_dl = self._dataloaders(X, groups=groups)
 
         if valid_dl is None:
             trainer.fit(model, train_dl)
