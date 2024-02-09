@@ -6,13 +6,13 @@ from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
+import wandb
 import pandas as pd
 from torch import nn
 from sklearn.metrics import classification_report, balanced_accuracy_score
 from torch.amp.autocast_mode import autocast
 from torch.cuda.amp.grad_scaler import GradScaler
 
-import wandb
 from vibnet.config import Config
 from vibnet.sampling import DataSampling
 from vibnet.experiment import Experiment

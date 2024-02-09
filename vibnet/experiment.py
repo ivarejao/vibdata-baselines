@@ -2,9 +2,9 @@ import os
 import subprocess
 
 import torch
+import wandb
 from dotenv import load_dotenv
 
-import wandb
 from vibnet.config import Config
 
 

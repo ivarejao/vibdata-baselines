@@ -49,9 +49,7 @@ def cwru() -> TrainDataset:
     """Returns a CWRU dataset"""
 
     ds = CWRU_raw("./cache/raw", download=True)
-    convertDataset(
-        ds, [SplitSampleRate(), NormalizeSampleRatePoly(97656)], dir_path="./cache/deep"
-    )
+    convertDataset(ds, [SplitSampleRate(), NormalizeSampleRatePoly(97656)], dir_path="./cache/deep")
     dataset = DeepDataset("./cache/deep")
     return TrainDataset(dataset)
 
@@ -70,9 +68,7 @@ def test_split(cwru: TrainDataset):
 
     train_indices = set(ds_train.indices)
     valid_indices = set(ds_valid.indices)
-    assert train_indices.isdisjoint(
-        valid_indices
-    ), "Train and validation sets are not disjoint"
+    assert train_indices.isdisjoint(valid_indices), "Train and validation sets are not disjoint"
 
 
 def test_parameters(cwru: TrainDataset):

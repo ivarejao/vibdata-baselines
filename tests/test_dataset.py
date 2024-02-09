@@ -14,9 +14,7 @@ def cwru() -> MemeDataset:
     """Returns a CWRU dataset"""
 
     ds = CWRU_raw("./cache/raw", download=True)
-    convertDataset(
-        ds, [SplitSampleRate(), NormalizeSampleRatePoly(97656)], dir_path="./cache/deep"
-    )
+    convertDataset(ds, [SplitSampleRate(), NormalizeSampleRatePoly(97656)], dir_path="./cache/deep")
     dataset = DeepDataset("./cache/deep")
     return MemeDataset(dataset)
 
