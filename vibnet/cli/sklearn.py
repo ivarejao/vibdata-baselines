@@ -56,7 +56,7 @@ def main(cfg: Path):
     df = pd.DataFrame(results)
     df = df.rename_axis("fold", axis="index")
     print(df)
-    filename = f"results-{actual_datetime.isoformat()}.csv"
+    filename = f"results-{config.config.get('run_name', None)}-{actual_datetime.isoformat()}.csv"
     print(f"Saving csv at [bold green]{filename}[/bold green]")
     df.to_csv(filename)
 

@@ -213,8 +213,8 @@ class ConfigSklearn:
         raw_dataset_module = getattr(raw_dataset_package, dataset_name)
         raw_dataset = getattr(raw_dataset_module, dataset_name + "_raw")(raw_root_dir, download=True)
 
-        deep_root_dir = os.path.join(self.config["dataset"]["deep"]["root"], dataset_name)
-        # Get the transforms to be applied
+        deep_root_dir = os.path.join(self.config["dataset"]["deep"]["root"], self.config.get("run_name", dataset_name))
+        # Get the transforms to be appliede
         transforms_config = self.config["dataset"]["deep"]["transforms"]
         transforms = deep_transforms.Sequential(
             [getattr(deep_transforms, t["name"])(**t["parameters"]) for t in transforms_config]
