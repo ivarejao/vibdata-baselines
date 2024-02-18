@@ -6,6 +6,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from torchmetrics.classification import F1Score, Accuracy
 
+
 class VibnetModule(L.LightningModule):
     def __init__(
         self,
@@ -14,7 +15,7 @@ class VibnetModule(L.LightningModule):
         optimizer_class: Type[Optimizer],
         optimizer_params: Dict[str, Any],
         num_classes: int,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.network = network
@@ -23,8 +24,8 @@ class VibnetModule(L.LightningModule):
         self.optimizer_params = optimizer_params
 
         if "lr_scheduler_class" in kwargs:
-            self.lr_scheduler_class : Type[LRScheduler] = kwargs["lr_scheduler_class"]
-            self.lr_scheduler_params :  Dict[str, Any] = kwargs["lr_scheduler_params"]
+            self.lr_scheduler_class: Type[LRScheduler] = kwargs["lr_scheduler_class"]
+            self.lr_scheduler_params: Dict[str, Any] = kwargs["lr_scheduler_params"]
 
         self.val_acc = Accuracy(task="multiclass", num_classes=num_classes)
         self.val_f1 = F1Score(task="multiclass", num_classes=num_classes, average="macro")
@@ -65,4 +66,3 @@ class VibnetModule(L.LightningModule):
             lr_scheduler = self.lr_scheduler_class(optimizer, **self.lr_scheduler_params)
             ret["lr_scheduler"] = lr_scheduler
         return ret
-    

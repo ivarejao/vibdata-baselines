@@ -19,11 +19,11 @@ import lightning as L
 from torch import nn
 from tqdm.auto import tqdm
 from torch.optim import Adam, Optimizer
-from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
 from torch.utils.data import Subset, Dataset, DataLoader
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.validation import check_is_fitted
+from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from vibdata.deep.DeepDataset import DeepDataset
 from lightning.pytorch.strategies import Strategy
 from lightning.pytorch.loggers.wandb import WandbLogger
@@ -154,7 +154,14 @@ class SingleSplit:
 
 
 class VibnetEstimator(BaseEstimator, ClassifierMixin):
-    _kwargs_prefixes = ["module__", "optimizer__", "iterator_train__", "iterator_valid__", "trainer__", "lr_scheduler__"]
+    _kwargs_prefixes = [
+        "module__",
+        "optimizer__",
+        "iterator_train__",
+        "iterator_valid__",
+        "trainer__",
+        "lr_scheduler__",
+    ]
     _group_name = {}
 
     def __init__(
@@ -165,7 +172,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         wandb_name: Optional[str] = None,
         wandb_group: Optional[str] = None,
         optimizer: Type[Optimizer] = Adam,
-        lr_scheduler : Type[LRScheduler] = None,
+        lr_scheduler: Type[LRScheduler] = None,
         loss_fn: nn.Module = nn.CrossEntropyLoss(),
         iterator_train: Type[DataLoader] = BalancedDataLoader,
         iterator_valid: Type[DataLoader] = DataLoader,
