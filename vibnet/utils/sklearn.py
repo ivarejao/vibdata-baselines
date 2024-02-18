@@ -19,6 +19,7 @@ import lightning as L
 from torch import nn
 from tqdm.auto import tqdm
 from torch.optim import Adam, Optimizer
+from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
 from torch.utils.data import Subset, Dataset, DataLoader
 from sklearn.model_selection import StratifiedKFold
@@ -153,7 +154,7 @@ class SingleSplit:
 
 
 class VibnetEstimator(BaseEstimator, ClassifierMixin):
-    _kwargs_prefixes = ["module__", "optimizer__", "iterator_train__", "iterator_valid__", "trainer__"]
+    _kwargs_prefixes = ["module__", "optimizer__", "iterator_train__", "iterator_valid__", "trainer__", "lr_scheduler__"]
     _group_name = {}
 
     def __init__(
@@ -164,6 +165,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         wandb_name: Optional[str] = None,
         wandb_group: Optional[str] = None,
         optimizer: Type[Optimizer] = Adam,
+        lr_scheduler : Type[LRScheduler] = None,
         loss_fn: nn.Module = nn.CrossEntropyLoss(),
         iterator_train: Type[DataLoader] = BalancedDataLoader,
         iterator_valid: Type[DataLoader] = DataLoader,
@@ -182,6 +184,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         self.module = module
         self.num_classes = num_classes
         self.optimizer = optimizer
+        self.lr_scheduler = lr_scheduler
         self.loss_fn = loss_fn
         self.iterator_train = iterator_train
         self.iterator_valid = iterator_valid
@@ -231,6 +234,9 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
     def _optimizer_params(self) -> dict[str, Any]:
         return self._params_prefix("optimizer__")
 
+    def _lr_scheduler_params(self) -> dict[str, Any]:
+        return self._params_prefix("lr_scheduler__")
+
     def _iterator_train_params(self) -> dict[str, Any]:
         return self._params_prefix("iterator_train__")
 
@@ -252,13 +258,17 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         return out
 
     def _create_module(self) -> VibnetModule:
-        return VibnetModule(
-            network=self.module(**self._module_params()),
-            loss_fn=self.loss_fn,
-            optimizer_class=self.optimizer,
-            optimizer_params=self._optimizer_params(),
-            num_classes=self.num_classes,
-        )
+        params = {
+            "network": self.module(**self._module_params()),
+            "loss_fn": self.loss_fn,
+            "optimizer_class": self.optimizer,
+            "optimizer_params": self._optimizer_params(),
+            "num_classes": self.num_classes,
+        }
+        if hasattr(self, "lr_scheduler"):
+            params["lr_scheduler_class"] = self.lr_scheduler
+            params["lr_scheduler_params"] = self._lr_scheduler_params()
+        return VibnetModule(**params)
 
     def _create_trainer(self) -> L.Trainer:
         trainer_params = {
@@ -273,7 +283,6 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             "deterministic": True,
         }
         trainer_params.update(self._trainer_params())
-
         return L.Trainer(**trainer_params)
 
     def _dataloaders(

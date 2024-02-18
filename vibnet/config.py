@@ -254,6 +254,12 @@ class ConfigSklearn:
         estimator_parameters["optimizer"] = getattr(torch.optim, optimizer_config["name"])
         estimator_parameters.update({"optimizer__" + k: v for k, v in optimizer_config["parameters"].items()})
 
+        if "lr_scheduler" in self.config:
+            lr_scheduler_config = self.config["lr_scheduler"]
+            estimator_parameters["lr_scheduler"] = getattr(torch.optim.lr_scheduler, lr_scheduler_config["name"])
+            estimator_parameters.update(
+                {f"lr_scheduler__{k}": v for k, v in lr_scheduler_config["parameters"].items()}
+            )
         # Extra parameters
         max_epochs = self.config["epochs"]
         batch_size = self.config["batch_size"]
