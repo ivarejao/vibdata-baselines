@@ -1,8 +1,9 @@
 # Experiment overall settings
-epochs: 100
+epochs: 10
 batch_size: 256
 seed: 42
-train_split: 10
+train_split:
+  name: "LeaveOneGroupOut"
 run_name: "cwru-m5"
 # fast_dev_run: 5
 precision: "bf16-mixed"
