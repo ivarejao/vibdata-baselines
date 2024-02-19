@@ -106,11 +106,11 @@ class GroupIMS(GroupDataset):
         defects_frequency = metainfo[metainfo.label != name_to_label["Normal"]].label.value_counts()
         # Create a dict with the amount of samples per fold
         self.defects_bins = {
-            label: {"samples_per_fold": total // GroupIMS.NUM_FOLDS, "current_amount": 0}
+            label: {"samples_per_fold": np.ceil(total / GroupIMS.NUM_FOLDS), "current_amount": 0}
             for label, total in defects_frequency.items()
         }
 
-    def _get_group_divided(self, label: list):
+    def _get_group_divided(self, label: int):
         current_amount = self.defects_bins[label]["current_amount"]
         samples_per_fold = self.defects_bins[label]["samples_per_fold"]
 
