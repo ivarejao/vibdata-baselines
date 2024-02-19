@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$id": "http://example.com/example.json",
+  "type": "object",
+  "required": [
+    "seed",
+    "model",
+    "dataset"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "seed": {
+      "type": "integer"
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "object"
+        }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "required": [
+        "name",
+        "groups_dir",
+        "raw",
+        "deep"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "groups_dir": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "object",
+          "required": [
+            "root"
+          ],
+          "properties": {
+            "root": {
+              "type": "string"
+            }
+          }
+        },
+        "deep": {
+          "type": "object",
+          "required": [
+            "root",
+            "transforms"
+          ],
+          "properties": {
+            "root": {
+              "type": "string"
+            },
+            "transforms": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "params_grid": {
+      "type": "object"
+    }
+  }
+}

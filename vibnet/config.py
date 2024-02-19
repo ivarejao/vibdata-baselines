@@ -1,4 +1,5 @@
 import os
+from os import PathLike
 from typing import Any, Type, Optional
 from pathlib import Path
 from datetime import datetime
@@ -18,6 +19,7 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold, BaseCrossVali
 from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 
 import vibnet.data.resampling as resampler_pkg
+from vibnet.schema import load_config
 from vibnet.models.M5 import M5
 from vibnet.models.model import Model
 from vibnet.utils.sklearn import SingleSplit, TrainDataset, VibnetEstimator, VibnetStandardScaler
@@ -172,10 +174,10 @@ def _get_sklearn_class(name: str) -> Type[BaseEstimator]:
 
 
 class ConfigSklearn:
-    def __init__(self, config_path: str | Path, args=None):
-        self.config = {}
-        with open(config_path, "r") as file:
-            self.config = yaml.safe_load(file)
+    def __init__(self, config_path: str | PathLike, args=None):
+        cfg_type, config = load_config(config_path)
+        self.config: dict[str, Any] = config
+        self.config_type: str = cfg_type
 
         self.dataset: DeepDataset | None = None
 
@@ -352,7 +354,7 @@ class ConfigSklearn:
 
     @property
     def is_deep_learning(self) -> bool:
-        return self.config["model"]["name"] in _DEEP_MODELS
+        return self.config_type == "deep"
 
     def get_estimator(self) -> BaseEstimator:
         if self.is_deep_learning:

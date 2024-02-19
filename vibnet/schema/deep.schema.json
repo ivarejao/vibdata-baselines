@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$id": "http://example.com/example.json",
+  "type": "object",
+  "required": [
+    "epochs",
+    "batch_size",
+    "seed",
+    "run_name",
+    "optimizer",
+    "model",
+    "dataset"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "epochs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "batch_size": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "train_split": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 2
+        },
+        {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "parameters": {
+              "type": "object"
+            }
+          }
+        }
+      ]
+    },
+    "run_name": {
+      "type": "string"
+    },
+    "fast_dev_run": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimumm": 1
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "precision": {
+      "type": [
+        "integer",
+        "string"
+      ],
+      "enum": [
+        64,
+        32,
+        16,
+        "64",
+        "32",
+        "16",
+        "bf16-mixed"
+      ]
+    },
+    "accelerator": {
+      "type": "string",
+      "enum": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "verbose": {
+      "type": "boolean"
+    },
+    "devices": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "string",
+          "enum": [
+            "auto"
+          ]
+        }
+      ]
+    },
+    "strategy": {
+      "type": "string"
+    },
+    "num_workers": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "trainer": {
+      "type": "object"
+    },
+    "optimizer": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "object"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "object"
+        }
+      }
+    },
+    "lr_scheduler": {
+      "type": "object",
+      "required": [
+        "name",
+        "parameters"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "object"
+        }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "required": [
+        "name",
+        "groups_dir",
+        "raw",
+        "deep"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "groups_dir": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "object",
+          "required": [
+            "root"
+          ],
+          "properties": {
+            "root": {
+              "type": "string"
+            }
+          }
+        },
+        "deep": {
+          "type": "object",
+          "required": [
+            "root",
+            "transforms"
+          ],
+          "properties": {
+            "root": {
+              "type": "string"
+            },
+            "transforms": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
