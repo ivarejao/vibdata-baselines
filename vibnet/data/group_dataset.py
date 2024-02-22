@@ -11,13 +11,12 @@ from vibnet.config import Config
 
 
 class GroupDataset:
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name : str = None) -> None:
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
         self.dataset = dataset
         self.config = config
         self.groups_dir = self.config["dataset"]["groups_dir"]
         file_name = "groups_" + (custom_name if custom_name else self.config["dataset"]["name"])
         self.groups_file = os.path.join(self.groups_dir, file_name + ".npy")
-
 
     def groups(self) -> npt.NDArray[np.int_]:
         """
@@ -61,8 +60,8 @@ class GroupCWRU(GroupDataset):
 
 
 class GroupEAS(GroupDataset):
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         self.normals_bins = {
             1: 0,
@@ -93,8 +92,8 @@ class GroupEAS(GroupDataset):
 class GroupIMS(GroupDataset):
     NUM_FOLDS = 3
 
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -140,8 +139,8 @@ class GroupIMS(GroupDataset):
 
 
 class GroupMAFAULDA(GroupDataset):
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -213,8 +212,8 @@ class GroupMFPT(GroupDataset):
 
     FAKE_OUTER_RACE_270_LABEL = 100
 
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -281,8 +280,8 @@ class GroupUOC(GroupDataset):
 
     NUM_FOLDS = 5
 
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
