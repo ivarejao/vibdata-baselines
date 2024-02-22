@@ -11,11 +11,13 @@ from vibnet.config import Config
 
 
 class GroupDataset:
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name : str = None) -> None:
         self.dataset = dataset
         self.config = config
         self.groups_dir = self.config["dataset"]["groups_dir"]
-        self.groups_file = os.path.join(self.groups_dir, "groups_" + self.config["dataset"]["name"] + ".npy")
+        file_name = "groups_" + (custom_name if custom_name else self.config["dataset"]["name"])
+        self.groups_file = os.path.join(self.groups_dir, file_name + ".npy")
+
 
     def groups(self) -> npt.NDArray[np.int_]:
         """

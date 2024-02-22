@@ -30,7 +30,7 @@ def main(cfg: Path):
 
     dataset_name = config["dataset"]["name"]
     dataset = config.get_deepdataset()
-    group_obj = group_class(dataset_name)(dataset=dataset, config=config)
+    group_obj = group_class(dataset_name)(dataset=dataset, config=config, custom_name=config["run_name"])
     groups = group_obj.groups().reshape(-1).astype(int)
 
     pipeline = config.get_estimator()
@@ -56,7 +56,7 @@ def main(cfg: Path):
     df = pd.DataFrame(results)
     df = df.rename_axis("fold", axis="index")
     print(df)
-    filename = f"results-{actual_datetime.isoformat()}.csv"
+    filename = f"results-{config.config.get('run_name', None)}-{actual_datetime.isoformat()}.csv"
     print(f"Saving csv at [bold green]{filename}[/bold green]")
     df.to_csv(filename)
 
