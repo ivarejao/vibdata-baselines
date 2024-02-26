@@ -222,16 +222,15 @@ class GroupMFPT(GroupDataset):
         name_to_label = dict(zip(values, keys))
 
         metainfo = dataset.get_metainfo()
-        outer_race_270_mask = (metainfo.label == name_to_label["Outer Race"]) & (metainfo.load == 270)
-        outer_race_270_frequency = metainfo[outer_race_270_mask].label.value_counts()
         # Trick so that can differentiate from outer race label
-        outer_race_270_frequency.index = [GroupMFPT.FAKE_OUTER_RACE_270_LABEL]
-        others_labels_frequency = metainfo[~outer_race_270_mask].label.value_counts()
+        outer_race_270_mask = (metainfo.label == name_to_label["Outer Race"]) & (metainfo.load == 270)
+        metainfo.loc[outer_race_270_mask, "label"] = GroupMFPT.FAKE_OUTER_RACE_270_LABEL
+        
+        labels_frequency = metainfo.label.value_counts()
 
-        labels_frequency = pd.concat([outer_race_270_frequency, others_labels_frequency])
         # Create a dict with the amount of samples per fold
         self.labels_bins = {
-            label: {"samples_per_fold": total // GroupMFPT.NUM_FOLDS, "current_amount": 0}
+            label: {"samples_per_fold": np.ceil(total / GroupMFPT.NUM_FOLDS), "current_amount": 0}
             for label, total in labels_frequency.items()
         }
 
