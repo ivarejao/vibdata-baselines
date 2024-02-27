@@ -1,0 +1,38 @@
+# Experiment overall settings
+epochs: 100
+batch_size: 64
+seed: 42
+run_name: RUN_NAME
+# Training settings
+optimizer:
+  name: Adam
+  parameters:
+    lr: 0.0003
+    weight_decay: 0.001
+lr_scheduler:
+  name: ExponentialLR
+  parameters:
+    gamma: 0.95
+model:
+  name: xresnet18
+  output_param: c_out
+  parameters:
+    c_in: 1
+dataset:
+  name: CWRU
+  groups_dir: "data/groups"
+  raw:
+    root: "data/raw_datasets"
+  deep:
+    root: "data/deep_datasets"
+    transforms:
+      - name: SplitSampleRate
+        parameters:
+          on_field: signal
+      - name: StandardScaler
+        parameters:
+          on_field: signal
+      - name: FilterByValue
+        parameters:
+          on_field: sample_rate
+          values: 12000
