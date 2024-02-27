@@ -363,14 +363,20 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         return self
 
     def _create_predict_trainer(self):
-        return L.Trainer(
-            accelerator=self.accelerator,
-            # Multi GPU in .predict can be error prone
-            devices=1 if self.accelerator == "gpu" else "auto",
-            precision=self.precision,
-            enable_progress_bar=self.verbose,
-            deterministic=True,
-        )
+        trainer_params = {
+            "accelerator": self.accelerator,
+            "devices": 1 if self.accelerator == "gpu" else "auto",
+            "precision": self.precision,
+            "enable_progress_bar": self.verbose,
+            "deterministic": True,
+        }
+        new_params = self._trainer_params()
+        # Check if multple devices are set and override to 1 as
+        # multiple devices on predictions are error prone
+        if "devices" in new_params and isinstance(new_params["devices"], list) and len(new_params["devices"]) > 1:
+            new_params["devices"] = 1 if self.accelerator == "gpu" else "auto"
+        trainer_params.update(new_params)
+        return L.Trainer(**trainer_params)
 
     @_no_lightning_logs
     def predict_proba(self, X: DeepDataset | TrainDataset | MemeDataset | Subset) -> np.ndarray[float]:
