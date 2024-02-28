@@ -11,11 +11,12 @@ from vibnet.config import Config
 
 
 class GroupDataset:
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
         self.dataset = dataset
         self.config = config
         self.groups_dir = self.config["dataset"]["groups_dir"]
-        self.groups_file = os.path.join(self.groups_dir, "groups_" + self.config["dataset"]["name"] + ".npy")
+        file_name = "groups_" + (custom_name if custom_name else self.config["dataset"]["name"])
+        self.groups_file = os.path.join(self.groups_dir, file_name + ".npy")
 
     def groups(self) -> npt.NDArray[np.int_]:
         """
@@ -59,8 +60,8 @@ class GroupCWRU(GroupDataset):
 
 
 class GroupEAS(GroupDataset):
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         self.normals_bins = {
             1: 0,
@@ -91,8 +92,8 @@ class GroupEAS(GroupDataset):
 class GroupIMS(GroupDataset):
     NUM_FOLDS = 3
 
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -138,8 +139,8 @@ class GroupIMS(GroupDataset):
 
 
 class GroupMAFAULDA(GroupDataset):
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -211,8 +212,8 @@ class GroupMFPT(GroupDataset):
 
     FAKE_OUTER_RACE_270_LABEL = 100
 
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -221,16 +222,15 @@ class GroupMFPT(GroupDataset):
         name_to_label = dict(zip(values, keys))
 
         metainfo = dataset.get_metainfo()
-        outer_race_270_mask = (metainfo.label == name_to_label["Outer Race"]) & (metainfo.load == 270)
-        outer_race_270_frequency = metainfo[outer_race_270_mask].label.value_counts()
         # Trick so that can differentiate from outer race label
-        outer_race_270_frequency.index = [GroupMFPT.FAKE_OUTER_RACE_270_LABEL]
-        others_labels_frequency = metainfo[~outer_race_270_mask].label.value_counts()
+        outer_race_270_mask = (metainfo.label == name_to_label["Outer Race"]) & (metainfo.load == 270)
+        metainfo.loc[outer_race_270_mask, "label"] = GroupMFPT.FAKE_OUTER_RACE_270_LABEL
+        
+        labels_frequency = metainfo.label.value_counts()
 
-        labels_frequency = pd.concat([outer_race_270_frequency, others_labels_frequency])
         # Create a dict with the amount of samples per fold
         self.labels_bins = {
-            label: {"samples_per_fold": total // GroupMFPT.NUM_FOLDS, "current_amount": 0}
+            label: {"samples_per_fold": np.ceil(total / GroupMFPT.NUM_FOLDS), "current_amount": 0}
             for label, total in labels_frequency.items()
         }
 
@@ -279,8 +279,8 @@ class GroupUOC(GroupDataset):
 
     NUM_FOLDS = 5
 
-    def __init__(self, dataset: DeepDataset, config: Config) -> None:
-        super().__init__(dataset, config)
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()

@@ -272,7 +272,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             "optimizer_params": self._optimizer_params(),
             "num_classes": self.num_classes,
         }
-        if hasattr(self, "lr_scheduler"):
+        if self.lr_scheduler is not None:
             params["lr_scheduler_class"] = self.lr_scheduler
             params["lr_scheduler_params"] = self._lr_scheduler_params()
         return VibnetModule(**params)
