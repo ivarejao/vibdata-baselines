@@ -25,6 +25,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.validation import check_is_fitted
 from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from vibdata.deep.DeepDataset import DeepDataset
+from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.strategies import Strategy
 from lightning.pytorch.loggers.wandb import WandbLogger
 
@@ -288,6 +289,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             "enable_progress_bar": self.verbose,
             "logger": self._create_logger(),
             "deterministic": True,
+            "callbacks": [self._create_model_checkpoint()],
         }
         trainer_params.update(self._trainer_params())
         return L.Trainer(**trainer_params)
@@ -333,6 +335,22 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
             save_dir=save_dir,
             group=self.group_name,
         )
+
+    def _create_model_checkpoint(self) -> ModelCheckpoint:
+        run_id = self.group_name.replace("/", "-").replace(" ", "-").lower()
+        checkpoint = ModelCheckpoint(
+            dirpath="checkpoints/{}".format(run_id),
+            monitor="val/f1",
+            save_last=True,
+            mode="max",
+            filename=add_index("sample_epoch={epoch:02d}-val_f1={val/f1:.2f}-fold"),
+            save_top_k=1,
+            save_on_train_epoch_end=True,
+            # Prevent format filename into a directory because of the slash in `val/f1`
+            auto_insert_metric_name=False,
+        )
+        checkpoint.CHECKPOINT_NAME_LAST = add_index("last-fold")  # Just to keep the same pattern
+        return checkpoint
 
     @_no_lightning_logs
     def fit(self, X: DeepDataset | TrainDataset | Subset, y=None, groups=None, **fit_params):
