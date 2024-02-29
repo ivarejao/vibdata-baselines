@@ -1,7 +1,10 @@
 # Experiment overall settings
 epochs: 100
 batch_size: 64
+train_split: 10
 seed: 42
+precision: "bf16-mixed"
+num_workers: 10
 run_name: RUN_NAME
 # Training settings
 optimizer:
@@ -27,9 +30,6 @@ dataset:
     root: "data/deep_datasets"
     transforms:
       - name: SplitSampleRate
-        parameters:
-          on_field: signal
-      - name: StandardScaler
         parameters:
           on_field: signal
       - name: FilterByValue
