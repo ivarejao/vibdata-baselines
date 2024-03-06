@@ -112,11 +112,12 @@ def main(cfg: Path, biased: bool):
 
     dataset_name = cfg["dataset"]["name"]
     dataset = cfg.get_dataset()
+    run_name = cfg["run_name"]
 
     group_obj = getattr(groups_module, "Group" + dataset_name)(dataset=dataset, config=cfg)
     groups = group_obj.groups()
 
-    configure_wandb(dataset_name, cfg, str(cfg_path), groups, args)
+    configure_wandb(run_name, cfg, str(cfg_path), groups, args)
 
     X, y = get_features(dataset)
 

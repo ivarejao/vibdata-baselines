@@ -1,4 +1,5 @@
 seed: 42
+run_name: RUN_NAME
 model:
   name: randomforest
   output_param: out_channel
@@ -21,6 +22,10 @@ dataset:
       - name: StandardScaler
         parameters:
           on_field: signal
+#      - name: FilterByValue
+#        parameters:
+#          on_field: sample_rate
+#          values: 12000
 params_grid:
   criterion: ['entropy', 'gini', 'log_loss']
   n_estimators: [50, 100, 200]
