@@ -17,8 +17,11 @@ def _main_baselines_wrapper(
 
 
 @_app.command(name="experiment")
-def _main_sklearn_wrapper(cfg: Path = typer.Option(help="Config file")):
-    _main_sklearn(cfg)
+def _main_sklearn_wrapper(
+    cfg: Path = typer.Option(help="Config file"),
+    biased: bool = typer.Option(False, help="Use biased classifier")
+):
+    _main_sklearn(cfg, biased)
 
 
 def run_baselines():

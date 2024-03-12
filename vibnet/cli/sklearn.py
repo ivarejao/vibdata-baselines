@@ -5,7 +5,7 @@ from datetime import datetime
 import wandb
 import pandas as pd
 from rich import print
-from sklearn.model_selection import LeaveOneGroupOut, cross_validate
+from sklearn.model_selection import LeaveOneGroupOut, cross_validate, StratifiedKFold
 
 from vibnet.config import ConfigSklearn
 from vibnet.utils.sklearn import TrainDataset
@@ -13,8 +13,10 @@ from vibnet.utils.sklearn import TrainDataset
 from .common import is_logged, group_class, wandb_login, set_deterministic
 
 
-def main(cfg: Path):
+def main(cfg: Path, biased: bool):
     actual_datetime = datetime.now()
+
+    unbiased = not biased
 
     try:
         wandb_login()
@@ -42,8 +44,15 @@ def main(cfg: Path):
         },
         "scoring": ["accuracy", "f1_macro", "balanced_accuracy"],
         "verbose": 4,
-        "cv": LeaveOneGroupOut(),
     }
+
+    if biased:
+        cross_validate_args["cv"] = StratifiedKFold(n_splits=len(set(groups)), shuffle=True, random_state=seed)
+    elif unbiased:
+        cross_validate_args["cv"] = LeaveOneGroupOut()
+    else:
+        raise Exception("Biased or Unbiased must be selected.")
+
     if config.is_deep_learning:
         train_dataset = TrainDataset(dataset)
         cross_validate_args.update({"X": train_dataset, "y": train_dataset.targets})
