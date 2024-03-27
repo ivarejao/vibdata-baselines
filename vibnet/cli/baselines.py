@@ -1,9 +1,11 @@
+import json
 import os
 from typing import List
 from pathlib import Path
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
 import wandb
 from dotenv import load_dotenv
 from sklearn.metrics import classification_report, balanced_accuracy_score
@@ -108,12 +110,28 @@ def knn_classifier_unbiased(cfg: Config, inputs: List[List[float]], labels: List
     return y_pred
 
 
-def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int]) -> None:
+def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int], biased: bool, dataset_name: str) -> None:
     labels = dataset.get_labels_name()
     labels = [label if label is not np.nan else "NaN" for label in labels]
 
+    balanced_accuracy = balanced_accuracy_score(y_true, y_pred)
+
+    # Show the results in terminal
     print(f"{classification_report(y_true, y_pred, target_names=labels)}")
-    print(f"Balanced accuracy: {balanced_accuracy_score(y_true, y_pred):.2f}")
+    print(f"Balanced accuracy: {balanced_accuracy:.2f}")
+
+    # Save the results in a .json file
+    bias = "biased" if biased else "unbiased"
+    report = classification_report(y_true, y_pred, target_names=labels, output_dict=True)
+    report['balanced accuracy'] = balanced_accuracy
+    directory = "results_baselines/" + bias
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    file_name = dataset_name + ".json"
+    full_path = os.path.join(directory, file_name)
+    with open(full_path, 'w') as json_file:
+        json.dump(report, json_file, indent=4)
+    print(f"\nThe file .json was saved in {full_path}.")
 
 
 def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int], args) -> None:
@@ -167,4 +185,4 @@ def main(cfg: Path, biased: bool):
     else:
         raise Exception("Undefined Classifier. Biased or unbiased must be selected.")
 
-    results(dataset, y, y_pred)
+    results(dataset, y, y_pred, biased, run_name)
