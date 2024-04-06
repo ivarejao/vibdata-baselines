@@ -4,10 +4,13 @@ import numpy as np
 import pandas as pd
 import numpy.typing as npt
 from tqdm import tqdm
+from imblearn.under_sampling import RandomUnderSampler
+
 from vibdata.deep.DeepDataset import DeepDataset
 from vibdata.deep.signal.core import SignalSample
 
 from vibnet.config import Config
+from vibnet.utils.MemeDataset import MemeDataset
 
 
 class GroupDataset:
@@ -312,3 +315,35 @@ class GroupXJTU(GroupDataset):
             return 3
         else:
             raise Exception(f"The file {file_name} does not belong to any group")
+
+
+def mirror_unbiased_into_biased_split(dataset : DeepDataset, unbiased_groups : np.array):
+    
+    targets = MemeDataset(dataset).targets
+    new_biased_groups = np.ones(len(targets)) * -1  # Where -1 is not setted
+
+    remaining_targets = targets.copy().reshape(-1, 1)
+    remaining_samples = np.arange(len(targets)).reshape(-1, 1) # Samples will be identifies by it index
+
+    for fold in np.unique(unbiased_groups):
+        # Create sampling strategy
+        f_idxs = np.argwhere(unbiased_groups == fold)
+        labels, frequency = np.unique(targets[f_idxs], return_counts=True)
+        frequency_unbiased_fold = dict(zip(labels, frequency))
+
+        # Undersample
+        rus = RandomUnderSampler(sampling_strategy=frequency_unbiased_fold, random_state=42)
+        samples_selected, _ = rus.fit_resample(X=remaining_samples, y=remaining_targets)
+        selected_indices = rus.sample_indices_
+        
+        # Create mask
+        mask = np.zeros(len(remaining_samples), dtype=bool)
+        mask[selected_indices] = True
+        
+        # Update
+        remaining_samples = remaining_samples[~mask].reshape(-1, 1)
+        remaining_targets = remaining_targets[~mask].reshape(-1, 1)
+
+        new_biased_groups[samples_selected] = fold 
+
+    return new_biased_groups

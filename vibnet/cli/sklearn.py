@@ -5,15 +5,15 @@ from datetime import datetime
 import wandb
 import pandas as pd
 from rich import print
-from sklearn.model_selection import LeaveOneGroupOut, cross_validate
+from sklearn.model_selection import LeaveOneGroupOut, cross_validate, StratifiedKFold
 
 from vibnet.config import ConfigSklearn
 from vibnet.utils.sklearn import TrainDataset
 
-from .common import is_logged, group_class, wandb_login, set_deterministic
+from .common import is_logged, group_class, wandb_login, set_deterministic, Split, mirror_unbiased_into_biased_split
 
 
-def main(cfg: Path):
+def main(cfg: Path, split : Split):
     actual_datetime = datetime.now()
 
     try:
@@ -30,20 +30,29 @@ def main(cfg: Path):
 
     dataset_name = config["dataset"]["name"]
     dataset = config.get_deepdataset()
-    group_obj = group_class(dataset_name)(dataset=dataset, config=config, custom_name=config["run_name"])
-    groups = group_obj.groups().reshape(-1).astype(int)
 
+    # Create common args for cross validation 
     pipeline = config.get_estimator()
     cross_validate_args = {
         "estimator": pipeline,
-        "groups": groups,
-        "fit_params": {
-            "classifier__groups": groups,
-        },
         "scoring": ["accuracy", "f1_macro", "balanced_accuracy"],
         "verbose": 4,
-        "cv": LeaveOneGroupOut(),
     }
+    group_obj = group_class(dataset_name)(dataset=dataset, config=config, custom_name=config["run_name"])
+    unbiased_groups = group_obj.groups().reshape(-1).astype(int)
+    
+    # Define specific params based on the type of split
+    if split is Split.biased_usual:
+        num_folds = len(set(unbiased_groups))
+        cross_validate_args["cv"] = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)
+    else:
+        if split is Split.biased_mirrored:
+            cross_validate_args["groups"] = mirror_unbiased_into_biased_split(dataset, unbiased_groups)
+        else:
+            cross_validate_args["groups"] = unbiased_groups
+        cross_validate_args["fit_params"] = {"classifier__groups": cross_validate_args["groups"]}
+        cross_validate_args["cv"] = LeaveOneGroupOut()
+
     if config.is_deep_learning:
         train_dataset = TrainDataset(dataset)
         cross_validate_args.update({"X": train_dataset, "y": train_dataset.targets})

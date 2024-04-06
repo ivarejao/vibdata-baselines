@@ -4,6 +4,7 @@ import typer
 
 from .sklearn import main as _main_sklearn
 from .baselines import main as _main_baselines
+from .common import Split
 
 _app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -11,14 +12,17 @@ _app = typer.Typer(pretty_exceptions_show_locals=False)
 @_app.command(name="baselines")
 def _main_baselines_wrapper(
     cfg: Path = typer.Option(help="Config file"),
-    biased: bool = typer.Option(False, help="Use biased classifier"),
+    split : Split = typer.Option(default=Split.unbiased, help="Type of division")
 ):
-    _main_baselines(cfg, biased)
+    _main_baselines(cfg, split)
 
 
 @_app.command(name="experiment")
-def _main_sklearn_wrapper(cfg: Path = typer.Option(help="Config file")):
-    _main_sklearn(cfg)
+def _main_sklearn_wrapper(
+    cfg: Path = typer.Option(help="Config file"), 
+    split : Split = typer.Option(default=Split.unbiased, help="Type of division")
+):
+    _main_sklearn(cfg, split)
 
 
 def run_baselines():

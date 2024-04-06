@@ -1,3 +1,4 @@
+from enum import Enum
 import os
 import random
 from typing import Type
@@ -8,11 +9,17 @@ import wandb
 from dotenv import load_dotenv
 
 from vibnet.data import group_dataset
+from vibnet.data.group_dataset import mirror_unbiased_into_biased_split
+from vibdata.deep.DeepDataset import DeepDataset
 
-__all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged"]
+__all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged", "mirror_unbiased_into_biased_split", "Split"]
 
 _is_logged = False
 
+class Split(str, Enum):
+    biased_usual = "biased_usual", 
+    biased_mirrored = "biased_mirrored",
+    unbiased = "unbiased"
 
 def set_deterministic(seed: int):
     # Fix seed
@@ -46,7 +53,6 @@ def wandb_login():
 def group_class(dataset_name: str) -> Type[group_dataset.GroupDataset]:
     class_ = getattr(group_dataset, "Group" + dataset_name)
     return class_
-
 
 def is_logged():
     return _is_logged
