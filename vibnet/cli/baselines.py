@@ -13,32 +13,15 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold, LeaveOneGroup
 from vibdata.deep.DeepDataset import DeepDataset
 
 import vibnet.data.group_dataset as groups_module
-from vibnet.data.group_dataset import mirror_unbiased_into_biased_split
+from vibnet.data.group_dataset import GroupMirrorBiased
 from vibnet.config import Config
 
 
-# TODO: This class exists for compatibility with `Config`
-# Must be removed in the future
-@dataclass
-class Args:
-    cfg: Path
-    biased: bool
-    unbiased: bool
-
-
 def get_features(dataset: DeepDataset) -> (List[int], List[int]):
-    X = np.empty([len(dataset), 9])
-    y = np.empty([len(dataset)], dtype=np.int8)
-
-    for i, sample in enumerate(dataset):
-        features = []
-        for feature in sample["features"].values():
-            features.append(feature)
-        X[i] = features
-        y[i] = sample["metainfo"]["label"].iloc[0]
+    X = [sample["signal"][0] for sample in dataset]
+    y = [sample["metainfo"]["label"] for sample in dataset]
 
     return X, y
-
 
 def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
@@ -113,7 +96,6 @@ def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int]
 
 
 def main(cfg: Path, split: Split):
-    # args = Args(cfg=cfg, biased=biased, unbiased=not biased)
     load_dotenv()
     config = Config(cfg)
 
@@ -124,7 +106,9 @@ def main(cfg: Path, split: Split):
     groups = group_obj.groups()
 
     if split is Split.biased_mirrored:
-        groups = mirror_unbiased_into_biased_split(dataset, groups)
+        groups = GroupMirrorBiased(
+                dataset=dataset, config=config, custom_name=config["run_name"]
+        ).groups(groups)
 
     configure_wandb(dataset_name, config, cfg, groups, split)
 

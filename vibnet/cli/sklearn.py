@@ -10,7 +10,7 @@ from sklearn.model_selection import LeaveOneGroupOut, cross_validate, Stratified
 from vibnet.config import ConfigSklearn
 from vibnet.utils.sklearn import TrainDataset
 
-from .common import is_logged, group_class, wandb_login, set_deterministic, Split, mirror_unbiased_into_biased_split
+from .common import is_logged, group_class, wandb_login, set_deterministic, Split, GroupMirrorBiased
 
 
 def main(cfg: Path, split : Split):
@@ -47,7 +47,9 @@ def main(cfg: Path, split : Split):
         cross_validate_args["cv"] = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)
     else:
         if split is Split.biased_mirrored:
-            cross_validate_args["groups"] = mirror_unbiased_into_biased_split(dataset, unbiased_groups)
+            cross_validate_args["groups"] = GroupMirrorBiased(
+                dataset=dataset, config=config, custom_name=config["run_name"]
+            ).groups(unbiased_groups)
         else:
             cross_validate_args["groups"] = unbiased_groups
         cross_validate_args["fit_params"] = {"classifier__groups": cross_validate_args["groups"]}

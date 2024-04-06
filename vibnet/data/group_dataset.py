@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+from numpy._typing import NDArray
 import pandas as pd
 import numpy.typing as npt
 from tqdm import tqdm
@@ -317,33 +318,43 @@ class GroupXJTU(GroupDataset):
             raise Exception(f"The file {file_name} does not belong to any group")
 
 
-def mirror_unbiased_into_biased_split(dataset : DeepDataset, unbiased_groups : np.array):
+class GroupMirrorBiased(GroupDataset):
+
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(MemeDataset(dataset), config, custom_name)
+        file_name = "groups_biased_mirrored" + (custom_name if custom_name else self.config["dataset"]["name"])
+        self.groups_file = os.path.join(self.groups_dir, file_name + ".npy")
     
-    targets = MemeDataset(dataset).targets
-    new_biased_groups = np.ones(len(targets)) * -1  # Where -1 is not setted
+    # Override the common groups method
+    def groups(self, unbiased_group : npt.NDArray[np.int_]) -> npt.NDArray[np.int_]:
+        return self.mirror_grouping(unbiased_group)
 
-    remaining_targets = targets.copy().reshape(-1, 1)
-    remaining_samples = np.arange(len(targets)).reshape(-1, 1) # Samples will be identifies by it index
+    def mirror_grouping(self, unbiased_groups: npt.NDArray[np.int_]) -> npt.NDArray[np.int_]:
+        targets = self.dataset.targets
+        new_biased_groups = np.ones(len(targets)) * -1  # Where -1 is not setted
 
-    for fold in np.unique(unbiased_groups):
-        # Create sampling strategy
-        f_idxs = np.argwhere(unbiased_groups == fold)
-        labels, frequency = np.unique(targets[f_idxs], return_counts=True)
-        frequency_unbiased_fold = dict(zip(labels, frequency))
+        remaining_targets = targets.copy().reshape(-1, 1)
+        remaining_samples = np.arange(len(targets)).reshape(-1, 1)  # Samples will be identifies by it index
 
-        # Undersample
-        rus = RandomUnderSampler(sampling_strategy=frequency_unbiased_fold, random_state=42)
-        samples_selected, _ = rus.fit_resample(X=remaining_samples, y=remaining_targets)
-        selected_indices = rus.sample_indices_
-        
-        # Create mask
-        mask = np.zeros(len(remaining_samples), dtype=bool)
-        mask[selected_indices] = True
-        
-        # Update
-        remaining_samples = remaining_samples[~mask].reshape(-1, 1)
-        remaining_targets = remaining_targets[~mask].reshape(-1, 1)
+        for fold in np.unique(unbiased_groups):
+            # Create sampling strategy
+            f_idxs = np.argwhere(unbiased_groups == fold)
+            labels, frequency = np.unique(targets[f_idxs], return_counts=True)
+            frequency_unbiased_fold = dict(zip(labels, frequency))
 
-        new_biased_groups[samples_selected] = fold 
+            # Undersample
+            rus = RandomUnderSampler(sampling_strategy=frequency_unbiased_fold, random_state=42)
+            samples_selected, _ = rus.fit_resample(X=remaining_samples, y=remaining_targets)
+            selected_indices = rus.sample_indices_
+            
+            # Create mask
+            mask = np.zeros(len(remaining_samples), dtype=bool)
+            mask[selected_indices] = True
+            
+            # Update
+            remaining_samples = remaining_samples[~mask].reshape(-1, 1)
+            remaining_targets = remaining_targets[~mask].reshape(-1, 1)
 
-    return new_biased_groups
+            new_biased_groups[samples_selected] = fold
+
+        return new_biased_groups

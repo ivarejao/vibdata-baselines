@@ -9,10 +9,10 @@ import wandb
 from dotenv import load_dotenv
 
 from vibnet.data import group_dataset
-from vibnet.data.group_dataset import mirror_unbiased_into_biased_split
+from vibnet.data.group_dataset import GroupMirrorBiased
 from vibdata.deep.DeepDataset import DeepDataset
 
-__all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged", "mirror_unbiased_into_biased_split", "Split"]
+__all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged", "GroupMirrorBiased", "Split"]
 
 _is_logged = False
 
