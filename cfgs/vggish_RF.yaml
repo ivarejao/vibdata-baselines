@@ -1,0 +1,41 @@
+# Experiment overall settings
+epochs: 80
+batch_size: -1
+seed: 42
+model_checkpoint_gap: 1
+model:
+  name: vggish
+  output_param: out_channel
+  parameters:
+    out_channel: 4
+classifier:
+  name: randomforest
+dataset:
+  name: CWRU
+  groups_dir: "data/groups"
+  raw: 
+    root: "data/raw_datasets"
+  deep:
+    root: "data/deep_datasets"
+    transforms:
+      # - name: SplitSampleRate
+      #   parameters:
+      #     on_field: signal
+      # - name: StandardScaler
+      #   parameters: 
+      #     on_field: signal
+      # - name: Spectrogram
+      #   parameters:
+      #     mode: "psd"
+      - name: Resize
+        parameters:
+          size: [96, 64]
+      - name: VGGishTransformation
+        parameters:
+          preprocess: True
+          postprocess: True
+params_grid:
+  criterion: ['entropy', 'gini', 'log_loss']
+  n_estimators: [50, 100, 200]
+  max_depth: [10, 25, 50]
+  min_samples_split: [2, 5, 10]

@@ -1,9 +1,6 @@
-import os
 from pathlib import Path
 from argparse import Namespace, ArgumentParser
 from datetime import datetime
-
-import numpy as np
 
 from lib.config import Config
 from lib.runner import ExpRunner
@@ -19,6 +16,9 @@ def parse_args() -> Namespace:
     parser.add_argument("--batch-size", help="Size of minibatching", type=int)
     parser.add_argument("--lr", help="Learning rate", type=float)
     parser.add_argument("--dataset", help="The dataset name")
+    
+    parser.add_argument("--sample-rate", help="The dataset sample rate filter", type=int, default=None)
+    
     test_group = parser.add_argument_group(
         "Testing model", "These arguments should be setted when the goal is to test a specific model"
     )
@@ -31,8 +31,8 @@ def parse_args() -> Namespace:
     )
 
     classifier = parser.add_mutually_exclusive_group(required=True)
-    classifier.add_argument('--biased', help='Use biased classifier', action='store_true')
-    classifier.add_argument('--unbiased', help='Use unbiased classifier', action='store_true')
+    classifier.add_argument("--biased", help="Use biased classifier", action="store_true")
+    classifier.add_argument("--unbiased", help="Use unbiased classifier", action="store_true")
 
     args = parser.parse_args()
     return args
@@ -67,7 +67,7 @@ def main():
             [str(model_dir / f.name) for f in model_dir.iterdir() if f.is_file() and ("best_model" in f.name)],
         )
 
-    runner = ExpRunner(data_sampling, cfg, exp)
+    runner = ExpRunner(data_sampling, cfg, exp, deterministic=False)
     for test_fold in range(data_sampling.get_num_folds()):
         header_log(test_fold)
         # Allocate the test, val and train set based on the folds
