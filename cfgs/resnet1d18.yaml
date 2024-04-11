@@ -16,7 +16,7 @@ lr_scheduler:
     parameters:
       gamma: 0.9
 model:
-  name: resnet18
+  name: resnet1d18
   output_param: out_channel
   parameters:
     out_channel: 4
@@ -29,24 +29,14 @@ dataset:
     root: "data/deep_datasets"
     transforms:
       - name: SplitSampleRate
+        parameters:
+          on_field: signal
+      # - name: NormalizeSampleRate
+      #   parameters:
+      #     sample_rate: 97656
       - name: StandardScaler
         parameters: 
           on_field: signal
-      - name: Luciano
-        parameters:
-          size: [224, 224]
-          transforms: ["spectrogram", "pseudo_wigner_ville", "scalogram"]
-          params:
-            spectrogram:
-              resolution: 0.125
-              set_nperseg: False
-              set_noverlap: False
-            scalogram:
-              scales: 256
-              wavelet: "morl"
-            pseudo_wigner_ville:
-              n_fbins: 8000
-          # image_examples: 1
       - name: FilterByValue
         parameters:
           on_field: sample_rate

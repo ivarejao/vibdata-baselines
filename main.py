@@ -16,9 +16,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--batch-size", help="Size of minibatching", type=int)
     parser.add_argument("--lr", help="Learning rate", type=float)
     parser.add_argument("--dataset", help="The dataset name")
-    
-    parser.add_argument("--sample-rate", help="The dataset sample rate filter", type=int, default=None)
-    
+
     test_group = parser.add_argument_group(
         "Testing model", "These arguments should be setted when the goal is to test a specific model"
     )
@@ -38,12 +36,6 @@ def parse_args() -> Namespace:
     return args
 
 
-def header_log(test_fold: int):
-    print("".center(30, "="))
-    print(f"Fold {test_fold}".center(30, "="))
-    print("".center(30, "="))
-
-
 def main():
     start_time = datetime.now()
     args = parse_args()
@@ -56,6 +48,7 @@ def main():
     # Configure the wandb and save the configuration used in the experiment
     exp.set_cfg(cfg, override=False)
     exp.configure_wandb(args.run)
+
     # Load dataset and datasampling
     dataset = cfg.get_dataset()
     data_sampling = DataSampling(dataset, cfg, args)
@@ -69,12 +62,18 @@ def main():
 
     runner = ExpRunner(data_sampling, cfg, exp, deterministic=False)
     for test_fold in range(data_sampling.get_num_folds()):
-        header_log(test_fold)
+
+        print("".center(30, "="))
+        print(f"Fold {test_fold}".center(30, "="))
+        print("".center(30, "="))
+
         # Allocate the test, val and train set based on the folds
         data_sampling.split(test_fold=test_fold, with_val_set=True)
+
         if test:
             model_path = [path for path in models_paths if "best_model_fold_{:02d}".format(test_fold) in path][0]
             runner.eval(model_fname=model_path, complete_path=True)
+
         else:
             # Train the model with validation in order to find the best epoch
             best_epoch, best_params = runner.grid_search_train()

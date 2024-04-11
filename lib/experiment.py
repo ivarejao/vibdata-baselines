@@ -104,17 +104,24 @@ class Experiment:
                 self.cfg["optimizer"]["parameters"]["weight_decay"] if "optimizer" in self.cfg.config else "None"
             ),
             "epochs": self.cfg["epochs"],
-            # "arquitecture": self.cfg["model"]["name"],
+            "arquitecture": self.cfg["model"]["name"],
             # "classifier": self.cfg["classifier"]["name"] if "classifier" in self.cfg.config else "None",
             "dataset": self.cfg["dataset"]["name"],
-            "sample_rate": self.cfg["dataset"]["sample_rate"],
             "unbiased": self.cfg["dataset"]["unbiased"],
         }
 
-        # Better way to keep track of the experiment's tranformations' parameters
-        last_transform: dict = self.cfg["dataset"]["deep"]["transforms"][-1]
-        if last_transform["name"] == "Luciano":
-            configs.update(_log_parameters(last_transform["parameters"]))
+        # Logs the experiments' sample rate filter and transformation parameters, if any
+        sample_filter = None
+        for t in self.cfg["dataset"]["deep"]["transforms"]:
+            match t["name"]:
+                case "FilterByValue":
+                    sample_filter = t["parameters"]["values"] if t["parameters"]["on_field"] == "sample_rate" else None
+                case "Luciano":
+                    configs.update(_log_parameters(t["parameters"]))
+                case _:
+                    continue
+                
+        configs.update({"sample_rate": sample_filter})
 
         wandb.init(
             # Set the project where this run will be logged

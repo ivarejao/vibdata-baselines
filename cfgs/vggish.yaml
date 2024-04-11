@@ -30,6 +30,10 @@ dataset:
   deep:
     root: "data/deep_datasets"
     transforms:
+      # - name: FilterByValue
+      #   parameters:
+      #     on_field: sample_rate
+      #     values: 12000
       - name: SplitSampleRate
         parameters:
           on_field: signal

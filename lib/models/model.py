@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 from tsai.models.XResNet1d import xresnet1d18
-# from lib.models.Resnet1d import resnet18
+from lib.models.Resnet1d import resnet18 as resnet1d18
 from lib.models.ResNet import resnet18
 from .VGGish import VGGish
 
 models = {
     "resnet18": resnet18,
+    "resnet1d18": resnet1d18,
     "xresnet18": xresnet1d18,
     "vggish": VGGish,
 }

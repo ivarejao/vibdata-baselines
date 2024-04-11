@@ -12,6 +12,7 @@ class BCSResNet18(nn.Module):
         self.fc = nn.Linear(512, out_channel)
 
     def forward(self, input):
+        input = input.squeeze(1)
         input = self.conv(input)
         input = self.fc(nn.functional.relu(input))
         return input

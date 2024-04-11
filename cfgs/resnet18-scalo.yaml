@@ -29,9 +29,6 @@ dataset:
     root: "data/deep_datasets"
     transforms:
       - name: SplitSampleRate
-      # - name: NormalizeSampleRate
-      #   parameters:
-      #     sample_rate: 97656
       - name: StandardScaler
         parameters: 
           on_field: signal
@@ -44,5 +41,9 @@ dataset:
                 scales: 256
                 wavelet: "morl"
           # image_examples: 1
+      - name: FilterByValue
+        parameters:
+          on_field: sample_rate
+          values: 12000
 params_grid:
   lr: [0.01, 0.001, 0.0003]

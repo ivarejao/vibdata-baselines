@@ -23,7 +23,7 @@ import lib.data.resampling as resampler_pkg
 
 # from lib.models.Alexnet1d import alexnet
 # from lib.models.M5 import M5
-# from lib.models.Resnet1d import resnet18, resnet34
+from lib.models.Resnet1d import resnet18 as resnet1d18
 from lib.models.ResNet import resnet18
 from lib.models.model import Model
 from lib.utils.sklearn import (
@@ -51,13 +51,7 @@ class Config:
         # Override the configuration with the cli args
         if args:
             self.args = args
-            # self.config["epochs"] = self.config["epochs"] if args.epochs is None else self.args.epochs
-            # self.config["optimizer"]["parameters"]["lr"] = (
-            #     self.config["optimizer"]["parameters"]["lr"] if args.lr is None else self.args.lr
-            # )
-            # self.config["batch_size"] = self.config["batch_size"] if args.dataset is None else self.args.batch_size
             self.config["dataset"]["name"] = self.config["dataset"]["name"] if args.dataset is None else args.dataset
-            self.config["dataset"]["sample_rate"] = args.sample_rate
             self.config["dataset"]["unbiased"] = args.unbiased
 
         self.setup_model()
@@ -167,6 +161,8 @@ def _get_model_class(name: str):
         #     return alexnet
         case "resnet18":
             return resnet18
+        case "resnet1d18":
+            return resnet1d18
         # case "resnet34":
         #     resnet34
         # case "xresnet18":

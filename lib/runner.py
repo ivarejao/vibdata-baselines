@@ -26,8 +26,6 @@ from lib.models.model import Model
 
 from sklearn.ensemble import RandomForestClassifier
 
-from vibdata.raw.CWRU import CWRU
-
 
 class ExpRunner:
     def __init__(
@@ -75,7 +73,7 @@ class ExpRunner:
             # Train the net
             train_loss = 0.0
             for i, (inputs, labels) in enumerate(train_loader, 0):
-                inputs = inputs.float().squeeze(1).to(device)
+                inputs = inputs.float().to(device)
 
                 labels = labels.to(device)
                 labels -= self.dataset.get_labels().min()  # Normalize the labels
@@ -145,7 +143,7 @@ class ExpRunner:
         classifier = RandomForestClassifier(n_jobs=-1, **kwargs)
 
         for inputs, labels in train_loader:
-            inputs = inputs.squeeze(1).float()
+            inputs = inputs.float()
             labels -= self.dataset.get_labels().min()  # Normalize the labels
             classifier = classifier.fit(inputs, labels)
 
@@ -240,7 +238,7 @@ class ExpRunner:
         with torch.no_grad():
             for batch_id, (data, labels) in enumerate(evalloader):
                 # Move to gpu
-                data = data.float().squeeze(1).to(device)
+                data = data.float().to(device)
 
                 labels = labels.to(device)
                 labels -= self.dataset.get_labels().min()
@@ -272,7 +270,7 @@ class ExpRunner:
         test_fold = self.dataset.get_fold()
 
         for data, labels in evalloader:
-            data = data.squeeze(1).float()
+            data = data.float()
             labels -= self.dataset.get_labels().min()
             output = self.classifier.predict(data)
 
