@@ -52,6 +52,7 @@ class VibnetModule(L.LightningModule):
 
         self.log("val/acc", self.val_acc, on_epoch=True, on_step=False)
         self.log("val/f1", self.val_f1, on_epoch=True, on_step=False)
+        self.log("val/loss", self.loss_fn(z, y), on_epoch=True, on_step=False)
 
         if hasattr(self, "lr_scheduler_class"):
             self.log("train/lr", self.lr_schedulers().get_last_lr()[0], on_epoch=True, on_step=False)
