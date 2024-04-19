@@ -2,9 +2,9 @@ from pathlib import Path
 
 import typer
 
+from .common import Split
 from .sklearn import main as _main_sklearn
 from .baselines import main as _main_baselines
-from .common import Split
 
 _app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -12,15 +12,15 @@ _app = typer.Typer(pretty_exceptions_show_locals=False)
 @_app.command(name="baselines")
 def _main_baselines_wrapper(
     cfg: Path = typer.Option(help="Config file"),
-    split : Split = typer.Option(default=Split.unbiased, help="Type of division")
+    split: Split = typer.Option(default=Split.unbiased, help="Type of division"),
 ):
     _main_baselines(cfg, split)
 
 
 @_app.command(name="experiment")
 def _main_sklearn_wrapper(
-    cfg: Path = typer.Option(help="Config file"), 
-    split : Split = typer.Option(default=Split.unbiased, help="Type of division")
+    cfg: Path = typer.Option(help="Config file"),
+    split: Split = typer.Option(default=Split.unbiased, help="Type of division"),
 ):
     _main_sklearn(cfg, split)
 

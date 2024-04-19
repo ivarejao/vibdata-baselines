@@ -5,15 +5,15 @@ from datetime import datetime
 import wandb
 import pandas as pd
 from rich import print
-from sklearn.model_selection import LeaveOneGroupOut, cross_validate, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, LeaveOneGroupOut, cross_validate
 
 from vibnet.config import ConfigSklearn
 from vibnet.utils.sklearn import TrainDataset
 
-from .common import is_logged, group_class, wandb_login, set_deterministic, Split, GroupMirrorBiased
+from .common import Split, GroupMirrorBiased, is_logged, group_class, wandb_login, set_deterministic
 
 
-def main(cfg: Path, split : Split):
+def main(cfg: Path, split: Split):
     actual_datetime = datetime.now()
 
     try:
@@ -31,7 +31,7 @@ def main(cfg: Path, split : Split):
     dataset_name = config["dataset"]["name"]
     dataset = config.get_deepdataset()
 
-    # Create common args for cross validation 
+    # Create common args for cross validation
     pipeline = config.get_estimator()
     cross_validate_args = {
         "estimator": pipeline,
@@ -40,7 +40,7 @@ def main(cfg: Path, split : Split):
     }
     group_obj = group_class(dataset_name)(dataset=dataset, config=config, custom_name=config["run_name"])
     unbiased_groups = group_obj.groups().reshape(-1).astype(int)
-    
+
     # Define specific params based on the type of split
     if split is Split.biased_usual:
         num_folds = len(set(unbiased_groups))

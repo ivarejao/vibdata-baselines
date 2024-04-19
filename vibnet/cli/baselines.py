@@ -4,7 +4,6 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import numpy as np
-from vibnet.cli.common import Split
 import wandb
 from dotenv import load_dotenv
 from sklearn.metrics import classification_report, balanced_accuracy_score
@@ -13,8 +12,9 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold, LeaveOneGroup
 from vibdata.deep.DeepDataset import DeepDataset
 
 import vibnet.data.group_dataset as groups_module
-from vibnet.data.group_dataset import GroupMirrorBiased
 from vibnet.config import Config
+from vibnet.cli.common import Split
+from vibnet.data.group_dataset import GroupMirrorBiased
 
 
 def get_features(dataset: DeepDataset) -> (List[int], List[int]):
@@ -22,6 +22,7 @@ def get_features(dataset: DeepDataset) -> (List[int], List[int]):
     y = [sample["metainfo"]["label"] for sample in dataset]
 
     return X, y
+
 
 def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
@@ -76,7 +77,7 @@ def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int]) -> None:
     print(f"Balanced accuracy: {balanced_accuracy_score(y_true, y_pred):.2f}")
 
 
-def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int], split : Split) -> None:
+def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int], split: Split) -> None:
     wandb.login(key=os.environ["WANDB_KEY"])
     wandb.init(
         # Set the project where this run will be logged
@@ -86,7 +87,7 @@ def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int]
             "model": cfg["model"]["name"],
             "folds": len(set(groups)),
             "params_grid": cfg["params_grid"],
-            "split": split.value
+            "split": split.value,
         },
         # Set the name of the experiment
         name=run_name,
@@ -106,9 +107,7 @@ def main(cfg: Path, split: Split):
     groups = group_obj.groups()
 
     if split is Split.biased_mirrored:
-        groups = GroupMirrorBiased(
-                dataset=dataset, config=config, custom_name=config["run_name"]
-        ).groups(groups)
+        groups = GroupMirrorBiased(dataset=dataset, config=config, custom_name=config["run_name"]).groups(groups)
 
     configure_wandb(dataset_name, config, cfg, groups, split)
 

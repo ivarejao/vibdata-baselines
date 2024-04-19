@@ -1,12 +1,11 @@
 import os
 
 import numpy as np
-from numpy._typing import NDArray
 import pandas as pd
 import numpy.typing as npt
 from tqdm import tqdm
+from numpy._typing import NDArray
 from imblearn.under_sampling import RandomUnderSampler
-
 from vibdata.deep.DeepDataset import DeepDataset
 from vibdata.deep.signal.core import SignalSample
 
