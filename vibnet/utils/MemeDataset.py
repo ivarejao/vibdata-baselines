@@ -8,9 +8,7 @@ class MemeDataset(Dataset):
     def __init__(self, src_dataset: DeepDataset, standardize=False):
         self.dataset = src_dataset
         self.standardize = standardize
-        rules = {
-            label : std_label for std_label, label in enumerate(src_dataset.get_metainfo().label.unique())
-        }
+        rules = {label: std_label for std_label, label in enumerate(src_dataset.get_metainfo().label.unique())}
         self.label_mapping = np.vectorize(rules.get)
 
     def __len__(self):
