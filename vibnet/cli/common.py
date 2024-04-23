@@ -1,17 +1,26 @@
 import os
 import random
+from enum import Enum
 from typing import Type
 
 import numpy as np
 import torch
 import wandb
 from dotenv import load_dotenv
+from vibdata.deep.DeepDataset import DeepDataset
 
 from vibnet.data import group_dataset
+from vibnet.data.group_dataset import GroupMirrorBiased
 
-__all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged"]
+__all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged", "GroupMirrorBiased", "Split"]
 
 _is_logged = False
+
+
+class Split(str, Enum):
+    biased_usual = ("biased_usual",)
+    biased_mirrored = ("biased_mirrored",)
+    unbiased = "unbiased"
 
 
 def set_deterministic(seed: int):

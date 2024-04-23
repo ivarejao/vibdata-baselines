@@ -13,27 +13,13 @@ from vibdata.deep.DeepDataset import DeepDataset
 
 import vibnet.data.group_dataset as groups_module
 from vibnet.config import Config
-
-
-# TODO: This class exists for compatibility with `Config`
-# Must be removed in the future
-@dataclass
-class Args:
-    cfg: Path
-    biased: bool
-    unbiased: bool
+from vibnet.cli.common import Split
+from vibnet.data.group_dataset import GroupMirrorBiased
 
 
 def get_features(dataset: DeepDataset) -> (List[int], List[int]):
-    X = np.empty([len(dataset), 9])
-    y = np.empty([len(dataset)], dtype=np.int8)
-
-    for i, sample in enumerate(dataset):
-        features = []
-        for feature in sample["features"].values():
-            features.append(feature)
-        X[i] = features
-        y[i] = sample["metainfo"]["label"].iloc[0]
+    X = [sample["signal"][0] for sample in dataset]
+    y = [sample["metainfo"]["label"] for sample in dataset]
 
     return X, y
 
@@ -62,7 +48,7 @@ def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups:
     return y_pred
 
 
-def classifier_unbiased(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
+def classifier_predefined(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
     parameters = cfg["params_grid"]
 
@@ -91,7 +77,7 @@ def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int]) -> None:
     print(f"Balanced accuracy: {balanced_accuracy_score(y_true, y_pred):.2f}")
 
 
-def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int], args) -> None:
+def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int], split: Split) -> None:
     wandb.login(key=os.environ["WANDB_KEY"])
     wandb.init(
         # Set the project where this run will be logged
@@ -101,8 +87,7 @@ def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int]
             "model": cfg["model"]["name"],
             "folds": len(set(groups)),
             "params_grid": cfg["params_grid"],
-            "biased": args.biased,
-            "unbiased": args.unbiased,
+            "split": split.value,
         },
         # Set the name of the experiment
         name=run_name,
@@ -111,27 +96,25 @@ def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int]
     wandb.save(cfg_path, policy="now")
 
 
-def main(cfg: Path, biased: bool):
-    args = Args(cfg=cfg, biased=biased, unbiased=not biased)
+def main(cfg: Path, split: Split):
     load_dotenv()
-    cfg_path = cfg
-    cfg = Config(cfg_path, args=args)
+    config = Config(cfg)
 
-    dataset_name = cfg["dataset"]["name"]
-    dataset = cfg.get_dataset()
+    dataset_name = config["dataset"]["name"]
+    dataset = config.get_dataset()
 
-    group_obj = getattr(groups_module, "Group" + dataset_name)(dataset=dataset, config=cfg)
+    group_obj = getattr(groups_module, "Group" + dataset_name)(dataset=dataset, config=config)
     groups = group_obj.groups()
 
-    configure_wandb(dataset_name, cfg, cfg_path, groups, args)
+    if split is Split.biased_mirrored:
+        groups = GroupMirrorBiased(dataset=dataset, config=config, custom_name=config["run_name"]).groups(groups)
+
+    configure_wandb(dataset_name, config, cfg, groups, split)
 
     X, y = get_features(dataset)
-
-    if args.biased:
-        y_pred = classifier_biased(cfg, X, y, groups)
-    elif args.unbiased:
-        y_pred = classifier_unbiased(cfg, X, y, groups)
+    if split is Split.biased_usual:
+        y_pred = classifier_biased(config, X, y, groups)
     else:
-        raise Exception("Undefined classifier")
+        y_pred = classifier_predefined(config, X, y, groups)
 
     results(dataset, y, y_pred)
