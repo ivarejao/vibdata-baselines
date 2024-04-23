@@ -96,15 +96,13 @@ class GroupCWRU(GroupDataset):
 
 
 class GroupEAS(GroupDataset):
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
-        super().__init__(dataset, config, custom_name)
 
-        self.normals_bins = {
-            1: 0,
-            2: 0,
-            3: 0,
-            4: 0,
-        }
+    NUM_FOLDS = 4
+
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name, shuffle=True)
+
+        self.normals_bins = { fold : 0 for fold in range(1, GroupEAS.NUM_FOLDS+1)}
 
     def _assigne_group(self, sample: SignalSample) -> int:
         unbalance_factor = sample["metainfo"]["unbalance_factor"]
@@ -129,7 +127,7 @@ class GroupIMS(GroupDataset):
     NUM_FOLDS = 3
 
     def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
-        super().__init__(dataset, config, custom_name)
+        super().__init__(dataset, config, custom_name, shuffle=True)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -249,7 +247,7 @@ class GroupMFPT(GroupDataset):
     FAKE_OUTER_RACE_270_LABEL = 100
 
     def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
-        super().__init__(dataset, config, custom_name)
+        super().__init__(dataset, config, custom_name, shuffle=True)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -308,15 +306,11 @@ class GroupPU(GroupDataset):
 
 
 class GroupUOC(GroupDataset):
-    healthy_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    missing_tooth_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    root_crack_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    spalling_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 
     NUM_FOLDS = 5
 
     def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
-        super().__init__(dataset, config, custom_name)
+        super().__init__(dataset, config, custom_name, shuffle=True)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
