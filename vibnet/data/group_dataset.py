@@ -257,7 +257,7 @@ class GroupMFPT(GroupDataset):
         self.labels_name = dict(zip(keys, values))
         name_to_label = dict(zip(values, keys))
 
-        metainfo = dataset.get_metainfo()
+        metainfo = dataset.get_metainfo().copy()
         # Trick so that can differentiate from outer race label
         outer_race_270_mask = (metainfo.label == name_to_label["Outer Race"]) & (metainfo.load == 270)
         metainfo.loc[outer_race_270_mask, "label"] = GroupMFPT.FAKE_OUTER_RACE_270_LABEL
