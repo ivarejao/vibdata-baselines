@@ -8,6 +8,8 @@ class MemeDataset(Dataset):
     def __init__(self, src_dataset: DeepDataset, standardize=False):
         self.dataset = src_dataset
         self.standardize = standardize
+        rules = {label: std_label for std_label, label in enumerate(src_dataset.get_metainfo().label.unique())}
+        self.label_mapping = np.vectorize(rules.get)
 
     def __len__(self):
         return len(self.dataset)
@@ -22,7 +24,7 @@ class MemeDataset(Dataset):
             y = ret["metainfo"]["label"].values.reshape(-1, 1)
 
         if self.standardize:
-            y -= self.dataset.metainfo["label"].min()
+            y = self.label_mapping(y)
         y = y.astype("int")  # Force the array type
         return X, y
 
@@ -35,5 +37,5 @@ class MemeDataset(Dataset):
         """
         targets = np.array(self.dataset.metainfo["label"], dtype=np.int64)
         if self.standardize:
-            targets -= targets.min()
+            targets = self.label_mapping(targets)
         return targets

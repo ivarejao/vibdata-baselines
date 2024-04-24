@@ -14,9 +14,11 @@ from vibnet.utils.MemeDataset import MemeDataset
 
 
 class GroupDataset:
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None, shuffle : bool = False) -> None:
         self.dataset = dataset
         self.config = config
+        self.shuffle_before_iter = shuffle
         self.groups_dir = self.config["dataset"]["groups_dir"]
         file_name = "groups_" + (custom_name if custom_name else self.config["dataset"]["name"])
         self.groups_file = os.path.join(self.groups_dir, file_name + ".npy")
@@ -32,14 +34,45 @@ class GroupDataset:
         if os.path.exists(self.groups_file):
             return np.load(self.groups_file)
         else:
-            mapped_samples = map(
-                self._assigne_group,
-                tqdm(self.dataset, total=len(self.dataset), unit="sample", desc="Grouping dataset: "),
-            )
-            groups = np.array(list(mapped_samples))
+            groups = self._random_grouping() if self.shuffle_before_iter else self._sequential_grouping() 
             os.makedirs(self.groups_dir, exist_ok=True)  # Ensure that the directory exists
             np.save(self.groups_file, groups)
             return groups
+
+    def _sequential_grouping(self) -> npt.NDArray[np.int_]:
+        """Generate the groups iterating sequentially over the dataset
+
+        Returns:
+            npt.NDArray[np.int_]: groups of each sample in dataset
+        """       
+        mapped_samples = map(
+            self._assigne_group,
+            tqdm(self.dataset, total=len(self.dataset), unit="sample", desc="Grouping dataset: "),
+        )
+        groups = np.array(list(mapped_samples))
+        return groups       
+
+    def _random_grouping(self) -> npt.NDArray[np.int_]:
+        """Generate the groups randomly iterating over the dataset, is equivalent to make a shuffle 
+        in the dataset. Despite the shuffle, the groups are ordered back to the original order.
+
+        This kind of grouping is needed for datasets where grouping are not predefined
+
+        Returns:
+            npt.NDArray[np.int_]: groups of each sample in dataset, in the original order
+        """       
+        # Create the indexes shuffled
+        rng = np.random.default_rng(self.config["seed"])  # Ensure thats the seed is correct
+        indexs_shuffled = np.arange(len(self.dataset))
+        rng.shuffle(indexs_shuffled)
+        # Map the dataset ramdomly
+        mapped_samples = list(map(
+            lambda i : self._assigne_group(self.dataset[i]),
+            tqdm(indexs_shuffled, total=len(self.dataset), unit="sample", desc="Grouping dataset: "),
+        ))
+        # Sort the output back to the dataset original order
+        groups = np.array([value for _, value in sorted(zip(indexs_shuffled, mapped_samples))])
+        return groups
 
     @staticmethod
     def _assigne_group(sample: SignalSample) -> int:
@@ -63,15 +96,13 @@ class GroupCWRU(GroupDataset):
 
 
 class GroupEAS(GroupDataset):
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
-        super().__init__(dataset, config, custom_name)
 
-        self.normals_bins = {
-            1: 0,
-            2: 0,
-            3: 0,
-            4: 0,
-        }
+    NUM_FOLDS = 4
+
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name, shuffle=True)
+
+        self.normals_bins = { fold : 0 for fold in range(1, GroupEAS.NUM_FOLDS+1)}
 
     def _assigne_group(self, sample: SignalSample) -> int:
         unbalance_factor = sample["metainfo"]["unbalance_factor"]
@@ -96,7 +127,7 @@ class GroupIMS(GroupDataset):
     NUM_FOLDS = 3
 
     def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
-        super().__init__(dataset, config, custom_name)
+        super().__init__(dataset, config, custom_name, shuffle=True)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -216,7 +247,7 @@ class GroupMFPT(GroupDataset):
     FAKE_OUTER_RACE_270_LABEL = 100
 
     def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
-        super().__init__(dataset, config, custom_name)
+        super().__init__(dataset, config, custom_name, shuffle=True)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -224,7 +255,7 @@ class GroupMFPT(GroupDataset):
         self.labels_name = dict(zip(keys, values))
         name_to_label = dict(zip(values, keys))
 
-        metainfo = dataset.get_metainfo()
+        metainfo = dataset.get_metainfo().copy()
         # Trick so that can differentiate from outer race label
         outer_race_270_mask = (metainfo.label == name_to_label["Outer Race"]) & (metainfo.load == 270)
         metainfo.loc[outer_race_270_mask, "label"] = GroupMFPT.FAKE_OUTER_RACE_270_LABEL
@@ -275,15 +306,11 @@ class GroupPU(GroupDataset):
 
 
 class GroupUOC(GroupDataset):
-    healthy_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    missing_tooth_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    root_crack_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    spalling_groups = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 
     NUM_FOLDS = 5
 
     def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
-        super().__init__(dataset, config, custom_name)
+        super().__init__(dataset, config, custom_name, shuffle=True)
 
         keys = dataset.get_labels()
         values = dataset.get_labels_name()
@@ -304,9 +331,38 @@ class GroupUOC(GroupDataset):
 
 
 class GroupXJTU(GroupDataset):
-    @staticmethod
-    def _assigne_group(sample: SignalSample) -> int:
+
+    NUM_FOLDS = 3
+
+    def __init__(self, dataset: DeepDataset, config: dict, custom_name: str = None) -> None:
+        super().__init__(dataset, config, custom_name, shuffle=True)
+
+        keys = dataset.get_labels()
+        values = dataset.get_labels_name()
+
+        self.labels_name = dict(zip(keys, values))
+
+        labels_out = set(self.labels_name.keys())
+
+        metainfo = dataset.get_metainfo().copy()
+        metainfo["condition"] = metainfo["bearing_code"].apply(lambda bear: bear.replace("Bearing", "").split("_")[0])
+        metainfo["condition"] = metainfo.condition.astype("category")
+
+        # Remove the labels that are presented in all conditions
+        label_per_condition = metainfo.groupby("condition")["label"].agg(set)
+        common_labels = set.intersection(*label_per_condition)
+        labels_out = labels_out.difference(common_labels)
+
+        self.labels_bins = {label: {fold: 0 for fold in range(1, GroupXJTU.NUM_FOLDS + 1)} for label in labels_out}
+        self.labels_out = labels_out
+
+    def _assigne_group(self, sample: SignalSample) -> int:
         file_name = sample["metainfo"]["file_name"]
+        label = sample["metainfo"]["label"]
+        if label in self.labels_out:
+            group = min(self.labels_bins[label], key=self.labels_bins[label].get)
+            self.labels_bins[label][group] += 1
+            return group
         if "Bearing1" in file_name:
             return 1
         elif "Bearing2" in file_name:
