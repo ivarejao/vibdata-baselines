@@ -15,7 +15,7 @@ from vibnet.utils.MemeDataset import MemeDataset
 
 class GroupDataset:
 
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None, shuffle : bool = False) -> None:
+    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None, shuffle: bool = False) -> None:
         self.dataset = dataset
         self.config = config
         self.shuffle_before_iter = shuffle
@@ -34,7 +34,7 @@ class GroupDataset:
         if os.path.exists(self.groups_file):
             return np.load(self.groups_file)
         else:
-            groups = self._random_grouping() if self.shuffle_before_iter else self._sequential_grouping() 
+            groups = self._random_grouping() if self.shuffle_before_iter else self._sequential_grouping()
             os.makedirs(self.groups_dir, exist_ok=True)  # Ensure that the directory exists
             np.save(self.groups_file, groups)
             return groups
@@ -44,13 +44,13 @@ class GroupDataset:
 
         Returns:
             npt.NDArray[np.int_]: groups of each sample in dataset
-        """       
+        """
         mapped_samples = map(
             self._assigne_group,
             tqdm(self.dataset, total=len(self.dataset), unit="sample", desc="Grouping dataset: "),
         )
         groups = np.array(list(mapped_samples))
-        return groups       
+        return groups
 
     def _random_grouping(self) -> npt.NDArray[np.int_]:
         """Generate the groups randomly iterating over the dataset, is equivalent to make a shuffle 
@@ -60,14 +60,14 @@ class GroupDataset:
 
         Returns:
             npt.NDArray[np.int_]: groups of each sample in dataset, in the original order
-        """       
+        """
         # Create the indexes shuffled
         rng = np.random.default_rng(self.config["seed"])  # Ensure thats the seed is correct
         indexs_shuffled = np.arange(len(self.dataset))
         rng.shuffle(indexs_shuffled)
         # Map the dataset ramdomly
         mapped_samples = list(map(
-            lambda i : self._assigne_group(self.dataset[i]),
+            lambda i: self._assigne_group(self.dataset[i]),
             tqdm(indexs_shuffled, total=len(self.dataset), unit="sample", desc="Grouping dataset: "),
         ))
         # Sort the output back to the dataset original order
@@ -96,13 +96,12 @@ class GroupCWRU(GroupDataset):
 
 
 class GroupEAS(GroupDataset):
-
     NUM_FOLDS = 4
 
     def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
         super().__init__(dataset, config, custom_name, shuffle=True)
 
-        self.normals_bins = { fold : 0 for fold in range(1, GroupEAS.NUM_FOLDS+1)}
+        self.normals_bins = {fold: 0 for fold in range(1, GroupEAS.NUM_FOLDS + 1)}
 
     def _assigne_group(self, sample: SignalSample) -> int:
         unbalance_factor = sample["metainfo"]["unbalance_factor"]
@@ -242,49 +241,33 @@ class GroupMAFAULDA(GroupDataset):
 
 
 class GroupMFPT(GroupDataset):
-    NUM_FOLDS = 3
-
-    FAKE_OUTER_RACE_270_LABEL = 100
-
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
-        super().__init__(dataset, config, custom_name, shuffle=True)
-
-        keys = dataset.get_labels()
-        values = dataset.get_labels_name()
-
-        self.labels_name = dict(zip(keys, values))
-        name_to_label = dict(zip(values, keys))
-
-        metainfo = dataset.get_metainfo().copy()
-        # Trick so that can differentiate from outer race label
-        outer_race_270_mask = (metainfo.label == name_to_label["Outer Race"]) & (metainfo.load == 270)
-        metainfo.loc[outer_race_270_mask, "label"] = GroupMFPT.FAKE_OUTER_RACE_270_LABEL
-        
-        labels_frequency = metainfo.label.value_counts()
-
-        # Create a dict with the amount of samples per fold
-        self.labels_bins = {
-            label: {"samples_per_fold": np.ceil(total / GroupMFPT.NUM_FOLDS), "current_amount": 0}
-            for label, total in labels_frequency.items()
-        }
-
-    def _get_group_divided(self, label):
-        current_amount = self.labels_bins[label]["current_amount"]
-        samples_per_fold = self.labels_bins[label]["samples_per_fold"]
-
-        group = (current_amount // samples_per_fold) + 1
-        self.labels_bins[label]["current_amount"] += 1
-        return group
+    MFPT_LABEL = {
+        23: 'Normal',
+        24: 'Inner Race',
+        25: 'Outer Race'
+    }
 
     def _assigne_group(self, sample: SignalSample) -> int:
-        label = sample["metainfo"]["label"]
-        label_str = self.labels_name[label]
-        load = sample["metainfo"]["load"]
+        label = sample['metainfo']['label']
+        load = sample['metainfo']['load']
 
-        if label_str == "Outer Race" and load == 270:
-            label = self.FAKE_OUTER_RACE_270_LABEL
-
-        return self._get_group_divided(label)
+        if ((GroupMFPT.MFPT_LABEL[label] == 'Outer Race' and load == 25) or
+                (GroupMFPT.MFPT_LABEL[label] == 'Inner Race' and load == 0)):
+            return 1
+        elif load == 100:
+            return 2
+        elif load == 200:
+            return 3
+        elif load == 300:
+            return 4
+        elif load == 50:
+            return 5
+        elif load == 150:
+            return 6
+        elif load == 250:
+            return 7
+        else:
+            raise Exception('Unexpected sample')
 
 
 class GroupPU(GroupDataset):
@@ -306,7 +289,6 @@ class GroupPU(GroupDataset):
 
 
 class GroupUOC(GroupDataset):
-
     NUM_FOLDS = 5
 
     def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
@@ -331,7 +313,6 @@ class GroupUOC(GroupDataset):
 
 
 class GroupXJTU(GroupDataset):
-
     NUM_FOLDS = 3
 
     def __init__(self, dataset: DeepDataset, config: dict, custom_name: str = None) -> None:
@@ -379,9 +360,9 @@ class GroupMirrorBiased(GroupDataset):
         super().__init__(MemeDataset(dataset), config, custom_name)
         file_name = "groups_biased_mirrored" + (custom_name if custom_name else self.config["dataset"]["name"])
         self.groups_file = os.path.join(self.groups_dir, file_name + ".npy")
-    
+
     # Override the common groups method
-    def groups(self, unbiased_group : npt.NDArray[np.int_]) -> npt.NDArray[np.int_]:
+    def groups(self, unbiased_group: npt.NDArray[np.int_]) -> npt.NDArray[np.int_]:
         return self.mirror_grouping(unbiased_group)
 
     def mirror_grouping(self, unbiased_groups: npt.NDArray[np.int_]) -> npt.NDArray[np.int_]:
@@ -401,11 +382,11 @@ class GroupMirrorBiased(GroupDataset):
             rus = RandomUnderSampler(sampling_strategy=frequency_unbiased_fold, random_state=42)
             samples_selected, _ = rus.fit_resample(X=remaining_samples, y=remaining_targets)
             selected_indices = rus.sample_indices_
-            
+
             # Create mask
             mask = np.zeros(len(remaining_samples), dtype=bool)
             mask[selected_indices] = True
-            
+
             # Update
             remaining_samples = remaining_samples[~mask].reshape(-1, 1)
             remaining_targets = remaining_targets[~mask].reshape(-1, 1)
