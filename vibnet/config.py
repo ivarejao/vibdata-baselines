@@ -57,17 +57,6 @@ class Config:
             config_str = file.read()
         self.config = yaml.load(config_str, Loader=yaml.FullLoader)
 
-    def setup_model(self):
-        name = self.config["model"]["name"]
-        parameters = self.config["model"]["parameters"]
-        output_param_name = self.config["model"]["output_param"]
-
-        # TODO: improve it by only calling one time this funcion
-        dataset: DeepDataset = self.get_dataset()
-        parameters[output_param_name] = len(dataset.get_labels())
-
-        self.model_constructor = Model(name, **parameters)
-
     def __repr__(self):
         return yaml.dump(self.config, default_flow_style=False)
 
@@ -109,10 +98,23 @@ class Config:
             device = torch.device("cpu")
         return device
 
-    def get_model(self, **kwargs) -> torch.nn.Module:
-        # Besides the default parameters given when Config is instantiated, these can be override, passing as kwargs
-        # into this method
-        return self.model_constructor.new(**kwargs)
+    def get_model(self, cv = StratifiedKFold(10, shuffle=False))-> BaseEstimator:
+        model_config = self.config["model"]
+        model_class = _get_sklearn_class(model_config["name"])
+        model_class_parameters = model_config.get("parameters", {})
+        estimator = model_class(**model_class_parameters)
+
+        parameter_grid = self.config.get("params_grid", None)
+        if parameter_grid is not None:
+            estimator = GridSearchCV(
+                estimator=estimator,
+                param_grid=parameter_grid,
+                scoring="balanced_accuracy",
+                cv=cv,
+                n_jobs=-1,
+            )
+
+        return estimator
 
     def get_dataset(self):
         dataset_name = self.config["dataset"]["name"]

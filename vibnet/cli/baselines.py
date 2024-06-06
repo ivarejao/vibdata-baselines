@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Tuple
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -17,7 +17,7 @@ from vibnet.cli.common import Split
 from vibnet.data.group_dataset import GroupMirrorBiased
 
 
-def get_features(dataset: DeepDataset) -> (List[int], List[int]):
+def get_features(dataset: DeepDataset) -> Tuple[List[int], List[int]]:
     X = [sample["signal"][0] for sample in dataset]
     y = [sample["metainfo"]["label"] for sample in dataset]
 
@@ -26,22 +26,12 @@ def get_features(dataset: DeepDataset) -> (List[int], List[int]):
 
 def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
-    parameters = cfg["params_grid"]
-
     num_folds = len(set(groups))
 
-    model = RandomForestClassifier(random_state=seed)
-
-    cv_outer = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)
+    cv_outer = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)  
     cv_inner = StratifiedKFold(n_splits=3, shuffle=True, random_state=seed)
 
-    clf = GridSearchCV(
-        estimator=model,
-        param_grid=parameters,
-        scoring="balanced_accuracy",
-        cv=cv_inner,
-        n_jobs=-1,
-    )
+    clf = cfg.get_model(cv=cv_inner)
 
     y_pred = cross_val_predict(clf, inputs, labels, cv=cv_outer)
 
@@ -50,20 +40,12 @@ def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups:
 
 def classifier_predefined(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
-    parameters = cfg["params_grid"]
-
-    model = RandomForestClassifier(random_state=seed)
-
-    cv_inner = LeaveOneGroupOut()
-    clf = GridSearchCV(
-        estimator=model,
-        param_grid=parameters,
-        scoring="balanced_accuracy",
-        cv=cv_inner,
-        n_jobs=-1,
-    )
 
     cv_outer = LeaveOneGroupOut()
+    cv_inner = LeaveOneGroupOut()
+
+    clf = cfg.get_model(cv=cv_inner)
+
     y_pred = cross_val_predict(clf, inputs, labels, groups=groups, cv=cv_outer, fit_params={"groups": groups})
 
     return y_pred
