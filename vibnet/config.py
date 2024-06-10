@@ -37,21 +37,7 @@ class Config:
     def __init__(self, config_path, args=None):
         self.config = {}
         self.load(config_path)
-
-        # Override the configuration with the cli args
-        # if args:
-        #     self.args = args
-        #     self.config["epochs"] = self.config["epochs"] if args.epochs is None else self.args.epochs
-        #     self.config["optimizer"]["parameters"]["lr"] = (
-        #         self.config["optimizer"]["parameters"]["lr"] if args.lr is None else self.args.lr
-        #     )
-        #     self.config["dataset"]["name"] = (
-        #         self.config["dataset"]["name"] if args.dataset is None else self.args.dataset
-        #     )
-        #     self.config["batch_size"] = self.config["batch_size"] if args.dataset is None else self.args.batch_size
-
-        self.setup_model()
-
+        
     def load(self, path):
         with open(path, "r") as file:
             config_str = file.read()
