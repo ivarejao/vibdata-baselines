@@ -61,16 +61,18 @@ def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int]) -> None:
 
 def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int], split: Split) -> None:
     wandb.login(key=os.environ["WANDB_KEY"])
+    config = {
+        "model": cfg["model"]["name"],
+        "folds": len(set(groups)),
+        "split": split.value,
+    }
+    config["params_grid"] = cfg["params_grid"] if "params_grid" in cfg else None
+
     wandb.init(
         # Set the project where this run will be logged
         project=os.environ["WANDB_PROJECT"],
         # Track essentials hyperparameters and run metadata
-        config={
-            "model": cfg["model"]["name"],
-            "folds": len(set(groups)),
-            "params_grid": cfg["params_grid"],
-            "split": split.value,
-        },
+        config=config,
         # Set the name of the experiment
         name=run_name,
     )
