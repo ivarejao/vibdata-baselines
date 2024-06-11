@@ -12,39 +12,32 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold, LeaveOneGroup
 from vibdata.deep.DeepDataset import DeepDataset
 
 import vibnet.data.group_dataset as groups_module
-from vibnet.config import Config
+from vibnet.config import ConfigSklearn
 from vibnet.cli.common import Split
 from vibnet.data.group_dataset import GroupMirrorBiased
 
 
-def get_features(dataset: DeepDataset) -> Tuple[List[int], List[int]]:
-    X = [sample["signal"][0] for sample in dataset]
-    y = [sample["metainfo"]["label"] for sample in dataset]
-
-    return X, y
-
-
-def classifier_biased(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
+def classifier_biased(cfg: ConfigSklearn, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
     num_folds = len(set(groups))
 
     cv_outer = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)  
     cv_inner = StratifiedKFold(n_splits=3, shuffle=True, random_state=seed)
 
-    clf = cfg.get_model(cv=cv_inner)
+    clf = cfg.get_estimator(grid_serch_cv=cv_inner)
 
     y_pred = cross_val_predict(clf, inputs, labels, cv=cv_outer)
 
     return y_pred
 
 
-def classifier_predefined(cfg: Config, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
+def classifier_predefined(cfg: ConfigSklearn, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
     seed = cfg["seed"]
 
     cv_outer = LeaveOneGroupOut()
     cv_inner = LeaveOneGroupOut()
 
-    clf = cfg.get_model(cv=cv_inner)
+    clf = cfg.get_model(grid_serch_cv=cv_inner)
 
     y_pred = cross_val_predict(clf, inputs, labels, groups=groups, cv=cv_outer, fit_params={"groups": groups})
 
@@ -59,7 +52,7 @@ def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int]) -> None:
     print(f"Balanced accuracy: {balanced_accuracy_score(y_true, y_pred):.2f}")
 
 
-def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int], split: Split) -> None:
+def configure_wandb(run_name: str, cfg: ConfigSklearn, cfg_path: str, groups: List[int], split: Split) -> None:
     wandb.login(key=os.environ["WANDB_KEY"])
     config = {
         "model": cfg["model"]["name"],
@@ -82,10 +75,10 @@ def configure_wandb(run_name: str, cfg: Config, cfg_path: str, groups: List[int]
 
 def main(cfg: Path, split: Split):
     load_dotenv()
-    config = Config(cfg)
+    config = ConfigSklearn(cfg)
 
     dataset_name = config["dataset"]["name"]
-    dataset = config.get_dataset()
+    dataset = config._get_dataset_deep()
 
     group_obj = getattr(groups_module, "Group" + dataset_name)(dataset=dataset, config=config)
     groups = group_obj.groups()
@@ -93,9 +86,9 @@ def main(cfg: Path, split: Split):
     if split is Split.biased_mirrored:
         groups = GroupMirrorBiased(dataset=dataset, config=config, custom_name=config["run_name"]).groups(groups)
 
-    configure_wandb(dataset_name, config, cfg, groups, split)
+    configure_wandb(config["run_name"], config, cfg, groups, split)
 
-    X, y = get_features(dataset)
+    X, y = config.get_dataset()
     if split is Split.biased_usual:
         y_pred = classifier_biased(config, X, y, groups)
     else:

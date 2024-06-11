@@ -9,13 +9,13 @@ from imblearn.under_sampling import RandomUnderSampler
 from vibdata.deep.DeepDataset import DeepDataset
 from vibdata.deep.signal.core import SignalSample
 
-from vibnet.config import Config
+from vibnet.config import ConfigSklearn
 from vibnet.utils.MemeDataset import MemeDataset
 
 
 class GroupDataset:
 
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None, shuffle : bool = False) -> None:
+    def __init__(self, dataset: DeepDataset, config: ConfigSklearn, custom_name: str = None, shuffle : bool = False) -> None:
         self.dataset = dataset
         self.config = config
         self.shuffle_before_iter = shuffle
@@ -99,7 +99,7 @@ class GroupEAS(GroupDataset):
 
     NUM_FOLDS = 4
 
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+    def __init__(self, dataset: DeepDataset, config: ConfigSklearn, custom_name: str = None) -> None:
         super().__init__(dataset, config, custom_name, shuffle=True)
 
         self.normals_bins = { fold : 0 for fold in range(1, GroupEAS.NUM_FOLDS+1)}
@@ -126,7 +126,7 @@ class GroupEAS(GroupDataset):
 class GroupIMS(GroupDataset):
     NUM_FOLDS = 3
 
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+    def __init__(self, dataset: DeepDataset, config: ConfigSklearn, custom_name: str = None) -> None:
         super().__init__(dataset, config, custom_name, shuffle=True)
 
         keys = dataset.get_labels()
@@ -173,7 +173,7 @@ class GroupIMS(GroupDataset):
 
 
 class GroupMAFAULDA(GroupDataset):
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+    def __init__(self, dataset: DeepDataset, config: ConfigSklearn, custom_name: str = None) -> None:
         super().__init__(dataset, config, custom_name)
 
         keys = dataset.get_labels()
@@ -246,7 +246,7 @@ class GroupMFPT(GroupDataset):
 
     FAKE_OUTER_RACE_270_LABEL = 100
 
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+    def __init__(self, dataset: DeepDataset, config: ConfigSklearn, custom_name: str = None) -> None:
         super().__init__(dataset, config, custom_name, shuffle=True)
 
         keys = dataset.get_labels()
@@ -309,7 +309,7 @@ class GroupUOC(GroupDataset):
 
     NUM_FOLDS = 5
 
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+    def __init__(self, dataset: DeepDataset, config: ConfigSklearn, custom_name: str = None) -> None:
         super().__init__(dataset, config, custom_name, shuffle=True)
 
         keys = dataset.get_labels()
@@ -375,7 +375,7 @@ class GroupXJTU(GroupDataset):
 
 class GroupMirrorBiased(GroupDataset):
 
-    def __init__(self, dataset: DeepDataset, config: Config, custom_name: str = None) -> None:
+    def __init__(self, dataset: DeepDataset, config: ConfigSklearn, custom_name: str = None) -> None:
         super().__init__(MemeDataset(dataset), config, custom_name)
         file_name = "groups_biased_mirrored" + (custom_name if custom_name else self.config["dataset"]["name"])
         self.groups_file = os.path.join(self.groups_dir, file_name + ".npy")
