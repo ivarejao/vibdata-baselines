@@ -35,9 +35,11 @@ def classifier_predefined(cfg: ConfigSklearn, inputs: List[int], labels: List[in
     cv_outer = LeaveOneGroupOut()
     cv_inner = LeaveOneGroupOut()
 
-    clf = cfg.get_model(grid_serch_cv=cv_inner)
+    clf = cfg.get_estimator(grid_serch_cv=cv_inner)
 
-    y_pred = cross_val_predict(clf, inputs, labels, groups=groups, cv=cv_outer, fit_params={"groups": groups})
+    fit_params = {"classifier__groups": groups} if "params_grid" in cfg else None
+
+    y_pred = cross_val_predict(clf, inputs, labels, groups=groups, cv=cv_outer, fit_params=fit_params)
 
     return y_pred
 

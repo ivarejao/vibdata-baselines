@@ -9,7 +9,7 @@ default:
        - echo "$SSH_PRIVATE_KEY" | base64 -d | ssh-add -
        # Dependencies
        - pip install --quiet -U pip
-       - pip install --quiet poetry 
+       - pip install --quiet poetry
        - poetry install --quiet
 stages:
     - formatting
