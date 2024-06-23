@@ -10,7 +10,7 @@ from vibdata.deep.DeepDataset import DeepDataset
 from vibdata.deep.signal.core import SignalSample
 
 from vibnet.config import ConfigSklearn
-from vibnet.utils.MemeDataset import MemeDataset
+from vibnet.utils.sklearn_dataset import SklearnDataset
 
 
 class GroupDataset:
@@ -376,7 +376,7 @@ class GroupXJTU(GroupDataset):
 class GroupMirrorBiased(GroupDataset):
 
     def __init__(self, dataset: DeepDataset, config: ConfigSklearn, custom_name: str = None) -> None:
-        super().__init__(MemeDataset(dataset), config, custom_name)
+        super().__init__(SklearnDataset(dataset), config, custom_name)
         file_name = "groups_biased_mirrored" + (custom_name if custom_name else self.config["dataset"]["name"])
         self.groups_file = os.path.join(self.groups_dir, file_name + ".npy")
     

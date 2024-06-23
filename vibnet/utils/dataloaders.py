@@ -6,11 +6,11 @@ import torch
 from torch.utils.data import Subset, DataLoader, default_collate
 from torch.utils.data.sampler import Sampler
 
-from vibnet.utils.MemeDataset import MemeDataset
+from vibnet.utils.sklearn_dataset import SklearnDataset
 
 
-def get_targets(dataset: MemeDataset | Subset) -> np.ndarray[np.int64]:
-    if isinstance(dataset, MemeDataset):
+def get_targets(dataset: SklearnDataset | Subset) -> np.ndarray[np.int64]:
+    if isinstance(dataset, SklearnDataset):
         return dataset.targets
     elif isinstance(dataset, Subset):
         targets = get_targets(dataset.dataset)
@@ -23,7 +23,7 @@ def get_targets(dataset: MemeDataset | Subset) -> np.ndarray[np.int64]:
 
 
 class BalancedSampler(Sampler):
-    def __init__(self, dataset: MemeDataset | Subset, random_state=None):
+    def __init__(self, dataset: SklearnDataset | Subset, random_state=None):
         labels = get_targets(dataset)
         self.labels = labels.reshape(-1)
         self.unique_labels: np.ndarray[int] = np.unique(labels)
@@ -58,7 +58,7 @@ def unsqueeze_collate(batch):
 
 
 class BalancedDataLoader(DataLoader):
-    def __init__(self, dataset: MemeDataset | Subset, drop_last=False, sampler=None, **kwargs):
+    def __init__(self, dataset: SklearnDataset | Subset, drop_last=False, sampler=None, **kwargs):
         sampler = BalancedSampler(dataset, random_state=10)
         super().__init__(dataset, sampler=sampler, drop_last=False, **kwargs)
 

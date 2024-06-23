@@ -31,7 +31,7 @@ from lightning.pytorch.loggers.wandb import WandbLogger
 
 from vibnet.utils.lightning import VibnetModule
 from vibnet.utils.dataloaders import BalancedDataLoader, get_targets
-from vibnet.utils.MemeDataset import MemeDataset
+from vibnet.utils.sklearn_dataset import SklearnDataset
 
 _run_name_counter = defaultdict(lambda: 0)
 
@@ -71,7 +71,7 @@ class _SklearnCompatibleDataset:
         return len(self), 2  # Compatibility work around
 
 
-class TrainDataset(MemeDataset, _SklearnCompatibleDataset):
+class TrainDataset(SklearnDataset, _SklearnCompatibleDataset):
     """Dataset that can be splitted into a subset. Useful for folding"""
 
     def __init__(self, src_dataset: DeepDataset, standardize: bool = True):
@@ -397,7 +397,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         return L.Trainer(**trainer_params)
 
     @_no_lightning_logs
-    def predict_proba(self, X: DeepDataset | TrainDataset | MemeDataset | Subset) -> np.ndarray[float]:
+    def predict_proba(self, X: DeepDataset | TrainDataset | SklearnDataset | Subset) -> np.ndarray[float]:
         check_is_fitted(self)
         dataset = PredictDataset(X)
         trainer = self._create_predict_trainer()
@@ -407,7 +407,7 @@ class VibnetEstimator(BaseEstimator, ClassifierMixin):
         predictions = [p.softmax(axis=1).to(torch.float32).cpu().numpy() for p in predictions]
         return np.vstack(predictions)
 
-    def predict(self, X: DeepDataset | TrainDataset | MemeDataset | Subset):
+    def predict(self, X: DeepDataset | TrainDataset | SklearnDataset | Subset):
         probabilities = self.predict_proba(X)
         predicted_labels = probabilities.argmax(axis=1)
         return predicted_labels
