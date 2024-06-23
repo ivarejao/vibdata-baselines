@@ -29,7 +29,7 @@ model:
 dataset:
   name: CWRU
   groups_dir: "data/groups"
-  raw: 
+  raw:
     root: "data/raw_datasets"
   deep:
     root: "data/deep_datasets"
@@ -37,7 +37,7 @@ dataset:
       - name: SplitSampleRate
         parameters:
           on_field: signal
-      # In case theres a need to filter by sample rate, 
+      # In case theres a need to filter by sample rate,
       # the filter should be inserted at this point
       # - name: FilterSampleRate
       #   parameters:

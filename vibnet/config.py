@@ -210,7 +210,7 @@ class ConfigSklearn:
         self.group_name_ = estimator.group_name
         return estimator
 
-    def _get_estimator_ml(self, gs_cv : BaseCrossValidator) -> BaseEstimator:
+    def _get_estimator_ml(self, gs_cv: BaseCrossValidator) -> BaseEstimator:
         model_config = self.config["model"]
         model_class = _get_sklearn_class(model_config["name"])
         model_class_parameters = model_config.get("parameters", {})

@@ -21,7 +21,7 @@ def classifier_biased(cfg: ConfigSklearn, inputs: List[int], labels: List[int], 
     seed = cfg["seed"]
     num_folds = len(set(groups))
 
-    cv_outer = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)  
+    cv_outer = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)
     cv_inner = StratifiedKFold(n_splits=3, shuffle=True, random_state=seed)
 
     clf = cfg.get_estimator(grid_serch_cv=cv_inner)
@@ -32,8 +32,6 @@ def classifier_biased(cfg: ConfigSklearn, inputs: List[int], labels: List[int], 
 
 
 def classifier_predefined(cfg: ConfigSklearn, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
-    seed = cfg["seed"]
-
     cv_outer = LeaveOneGroupOut()
     cv_inner = LeaveOneGroupOut()
 

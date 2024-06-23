@@ -1,10 +1,10 @@
 # Experiment overall settings
+seed: 42
+run_name: "cwru-m5"
 epochs: 10
 batch_size: 256
-seed: 42
 train_split:
   name: "LeaveOneGroupOut"
-run_name: "cwru-m5"
 # fast_dev_run: 5
 precision: "bf16-mixed"
 num_workers: 10
@@ -21,7 +21,7 @@ model:
 dataset:
   name: CWRU
   groups_dir: "data/groups"
-  raw: 
+  raw:
     root: "data/raw_datasets"
   deep:
     root: "data/deep_datasets"

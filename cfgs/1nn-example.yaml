@@ -1,9 +1,10 @@
 seed: 42
-run_name: knn-exp
+run_name: 1nn-exp
 model:
   name: knn
   parameters:
     n_jobs: 10
+    n_neighbors: 1
 dataset:
   name: CWRU
   groups_dir: "data/groups"
@@ -18,6 +19,3 @@ dataset:
       - name: FeatureExtractor
         parameters:
           features: ["Kurtosis", "RootMeanSquare", "StandardDeviation", "Mean", "LogAttackTime", "TemporalDecrease", "TemporalCentroid", "EffectiveDuration", "ZeroCrossingRate"]
-params_grid:
-  n_neighbors: [5, 7, 9, 11]
-  p: [1, 2]
