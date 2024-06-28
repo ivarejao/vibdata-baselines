@@ -1,23 +1,32 @@
 # Experiment overall settings
+run_name: "cwru-xresnet"
 seed: 42
-run_name: "cwru-m5"
 epochs: 10
-batch_size: 256
-train_split:
-  name: "LeaveOneGroupOut"
-# fast_dev_run: 5
-precision: "bf16-mixed"
+batch_size: 64
+train_split: 10
+# precision: "16-mixed"
 num_workers: 10
+# Trainer specific settings, this is usually used to set the device in multiple gpus machines
+trainer:
+ accelerator: "gpu"
+#  devices: 0
+# Debug settings
+# fast_dev_run: 5
 # Training settings
 optimizer:
   name: Adam
   parameters:
     lr: 0.0003
     weight_decay: 0.001
-model:
-  name: m5
+lr_scheduler:
+  name: ExponentialLR
   parameters:
-    n_output: 4
+    gamma: 0.95
+model:
+  name: xresnet18
+  output_param: c_out
+  parameters:
+    c_in: 1
 dataset:
   name: CWRU
   groups_dir: "data/groups"
@@ -29,6 +38,10 @@ dataset:
       - name: SplitSampleRate
         parameters:
           on_field: signal
-      - name: NormalizeSampleRate
+      - name: FilterByValue
         parameters:
-          sample_rate: 97656
+          on_field: "sample_rate"
+          values: 12000
+      # - name: NormalizeSampleRate
+      #   parameters:
+      #     sample_rate: 97656
