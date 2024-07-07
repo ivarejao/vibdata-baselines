@@ -33,6 +33,7 @@ class GroupDataset:
             npt.NDArray[np.int_]: groups of all dataset
         """
         if os.path.exists(self.groups_file):
+            print(f"Loading group dataset from: {self.groups_file}")
             return np.load(self.groups_file)
         else:
             groups = self._random_grouping() if self.shuffle_before_iter else self._sequential_grouping()
