@@ -1,7 +1,7 @@
 import os
+import shutil
 from os import PathLike
 from typing import Any, Type, Optional
-from pathlib import Path
 from datetime import datetime
 
 import yaml
@@ -21,7 +21,6 @@ from vibdata.deep.DeepDataset import DeepDataset, convertDataset
 import vibnet.data.resampling as resampler_pkg
 from vibnet.schema import load_config
 from vibnet.models.M5 import M5
-from vibnet.models.model import Model
 from vibnet.utils.sklearn import SingleSplit, TrainDataset, VibnetEstimator, VibnetStandardScaler
 from vibnet.models.Resnet1d import resnet18, resnet34
 from vibnet.models.Alexnet1d import alexnet
@@ -78,6 +77,18 @@ class ConfigSklearn:
         now = datetime.now()
         now_str = now.strftime("%d/%m/%Y %H:%M")
         self.group_name_ = f"{dataset_name}/{model_name} [{now_str}]"
+
+    def clear_cache(self):
+        deep_root_dir = os.path.join(
+            self.config["dataset"]["deep"]["root"], self.config.get("run_name", self.config["dataset"]["name"])
+        )
+        if os.path.exists(deep_root_dir):
+            print("!! Removing cache deep", deep_root_dir)
+            shutil.rmtree(deep_root_dir)
+        group_path = os.path.join(self.config["dataset"]["groups_dir"], "groups_" + self.config["run_name"] + ".npy")
+        if os.path.exists(group_path):
+            print("!! Removing cache groups", group_path)
+            os.remove(group_path)
 
     @property
     def group_name(self) -> Optional[str]:
@@ -224,6 +235,7 @@ class ConfigSklearn:
                 scoring="balanced_accuracy",
                 cv=gs_cv,
                 n_jobs=-1,
+                verbose=1,  # TODO: remove for debugging
             )
 
         return estimator
