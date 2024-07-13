@@ -1,10 +1,9 @@
 import os
+from typing import Any, Dict, List, Generator
 
 import numpy as np
-import pandas as pd
 import numpy.typing as npt
 from tqdm import tqdm
-from numpy._typing import NDArray
 from imblearn.under_sampling import RandomUnderSampler
 from vibdata.deep.DeepDataset import DeepDataset
 from vibdata.deep.signal.core import SignalSample
@@ -413,3 +412,50 @@ class GroupMirrorBiased(GroupDataset):
             new_biased_groups[samples_selected] = fold
 
         return new_biased_groups
+
+
+class GroupMultiRoundCWRU(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        sample_metainfo = sample["metainfo"]
+        return sample_metainfo["label"].astype(str) + " " + sample_metainfo["load"].astype(int).astype(str)
+
+
+class GroupMultiRoundMFPT(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        sample_metainfo = sample["metainfo"]
+        return sample_metainfo["label"].astype(str) + " " + sample_metainfo["load"].astype(int).astype(str)
+
+
+class GroupMultiRoundPU(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        sample_metainfo = sample["metainfo"]
+        condition_fields = ["radial_force_n", "rotation_hz", "load_nm"]
+        condition_str = "_".join([sample_metainfo[field].astype(str) for field in condition_fields])
+        return sample_metainfo["label"].astype(str) + " " + condition_str
+
+
+def compute_combinations(y, groups) -> Generator[Dict[int, List[Any]], None, None]:
+    labels = np.unique(y)
+    # Create a dictionary to map labels to their unique groups
+    initial_states = {label: np.unique(groups[y == label]).tolist() for label in labels}
+    n_splits = int(len(np.unique(groups)) / len(np.unique(y)))
+
+    def shift_groups(groups, shift):
+        return groups[-shift:] + groups[:-shift]
+
+    def backtrack(currrent_combination, label_idx):
+        if currrent_combination.keys() == initial_states.keys():
+            yield currrent_combination
+            return
+
+        for shift in range(n_splits):
+            label = labels[label_idx]
+            shifted_groups = shift_groups(initial_states[label], shift)
+            currrent_combination[label] = shifted_groups
+            yield from backtrack(currrent_combination.copy(), label_idx + 1)
+            currrent_combination.pop(label)
+
+    yield from backtrack({}, 0)

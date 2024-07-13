@@ -1,25 +1,23 @@
-from datetime import datetime
 import os
-import pickle
-from typing import List, Tuple
+from typing import List
 from pathlib import Path
-from dataclasses import dataclass
+from datetime import datetime
 
 import numpy as np
-import pandas as pd
 import wandb
+import pandas as pd
+from scipy import stats
 from dotenv import load_dotenv
-from sklearn.metrics import classification_report, balanced_accuracy_score
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, StratifiedKFold, LeaveOneGroupOut, cross_val_predict
+from sklearn.metrics import f1_score, classification_report, balanced_accuracy_score
+from sklearn.model_selection import StratifiedKFold, LeaveOneGroupOut, cross_val_predict
 from vibdata.deep.DeepDataset import DeepDataset
 
-import vibnet.data.group_dataset as groups_module
 from vibnet.config import ConfigSklearn
-from vibnet.cli.common import Split
-from vibnet.data.group_dataset import GroupMirrorBiased
+from vibnet.cli.common import TOTAL_SPLITS, Split, is_logged, group_class
+from vibnet.data.group_dataset import GroupMirrorBiased, compute_combinations
 
-def classifier_biased(cfg: ConfigSklearn, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
+
+def classifier_biased(cfg: ConfigSklearn, inputs: List[int], labels: List[int], groups: List[int]) -> pd.DataFrame:
     seed = cfg["seed"]
     num_folds = len(set(groups))
 
@@ -30,10 +28,12 @@ def classifier_biased(cfg: ConfigSklearn, inputs: List[int], labels: List[int], 
 
     y_pred = cross_val_predict(clf, inputs, labels, cv=cv_outer)
 
-    return y_pred
+    results = pd.DataFrame({"y_true": labels, "y_pred": y_pred})
+    results["round"] = 0  # For compability with report function
+    return results
 
 
-def classifier_predefined(cfg: ConfigSklearn, inputs: List[int], labels: List[int], groups: List[int]) -> List[int]:
+def classifier_predefined(cfg: ConfigSklearn, inputs: List[int], labels: List[int], groups: List[int]) -> pd.DataFrame:
     cv_outer = LeaveOneGroupOut()
     cv_inner = LeaveOneGroupOut()
 
@@ -43,58 +43,72 @@ def classifier_predefined(cfg: ConfigSklearn, inputs: List[int], labels: List[in
 
     y_pred = cross_val_predict(clf, inputs, labels, groups=groups, cv=cv_outer, fit_params=fit_params)
 
-    return y_pred
+    results = pd.DataFrame({"y_true": labels, "y_pred": y_pred})
+    results["round"] = 0  # For compability with report function
+    return results
 
-def round_cv(cfg: ConfigSklearn, inputs: List[int], labels: List[int], groups: List[int], metainfo: pd.DataFrame) -> List[int]:
 
-    from vibnet.data.round_cv import NewLogo, RepeteadNewLogo
-    from sklearn.model_selection import cross_validate
-
-    NUM_REPEATS = 30
-    actual_datetime = datetime.now()
-
-    # num_folds_per_dataset = {"CWRU": lambda df: df["load"].nunique(), 
-    #        "MFPT": lambda df: df[["load", "label"]].drop_duplicates().groupby("label").count()["load"].mean(), 
-    #        "PU": lambda df: df[["radial_force_n", "rotation_hz", "load_nm"]].drop_duplicates().shape[0]}
-    # folds_per_round = num_folds_per_dataset[cfg["dataset"]["name"]](metainfo)
-
-    folds_per_round = np.unique(groups).shape[0] / np.unique(labels).shape[0]  # folds_per_round = total_groups / total_labels = num_conditions
-    num_repeats = np.ceil(NUM_REPEATS / folds_per_round).astype(int)
+def classifier_multi_round(
+    cfg: ConfigSklearn,
+    inputs: List[int],
+    labels: List[int],
+    groups: List[int],
+) -> pd.DataFrame:
+    n_splits = int(
+        np.unique(groups).shape[0] / np.unique(labels).shape[0]
+    )  # folds_per_round = total_groups / total_labels = num_conditions
+    num_repeats = np.ceil(TOTAL_SPLITS / n_splits).astype(int)
     print("Num_repeat: ", num_repeats)
-    print("Folds per round: ", folds_per_round)
+    print("Folds per round: ", n_splits)
 
-    cv_outer = RepeteadNewLogo(n_repeats=num_repeats, random_state=cfg["seed"], y=labels, groups=groups)
-    cv_inner = NewLogo(shuffle=True, random_state=cfg["seed"], combinations=cv_outer.combinations)
+    results = []
+    combinations = compute_combinations(labels, groups)
+    for i in range(num_repeats):
+        # Get the new grops combinations and define the folds division in this round
+        round_groups = next(combinations)
+        groups_per_fold = [tuple(fold) for fold in zip(*round_groups.values())]
+        current_group = np.sum(
+            [np.isin(groups, fold_groups) * i for i, fold_groups in enumerate(groups_per_fold)], axis=0
+        )
 
-    clf = cfg.get_estimator(grid_serch_cv=cv_inner)
+        round_results = classifier_predefined(cfg, inputs, labels, current_group)
+        round_results["round"] = i
+        results.append(round_results)
 
-    fit_params = {"classifier__groups": groups} if "params_grid" in cfg else None
+    results = pd.concat(results)
 
-    # Currently, the `cross_val_predict` does not support Cross-Validation with Rounds
-    # https://github.com/scikit-learn/scikit-learn/issues/16135#issue-550525513
-    stats = cross_validate(clf, inputs, labels, groups=groups, cv=cv_outer, fit_params=fit_params, scoring=["f1_macro", "balanced_accuracy"],
-                           return_indices=True, error_score="raise", verbose=2)
-
-    print("Num splits: ", len(stats["indices"]["test"]))
-    # TODO: Change format back to csv
-    filename = f"results-baselines-{cfg.config.get('run_name', None)}-{actual_datetime.isoformat()}.pkl"
-
-    # pd.DataFrame(stats).to_csv(filename, index=False)
-    pickle.dump(stats, open(filename, "wb"))
-
-    print(f"Mean F1 macro: {np.mean(stats['test_f1_macro']):.2f}")
-    print(f"Mean Balanced accuracy: {np.mean(stats['test_balanced_accuracy']):.2f}")
-    print(f"Stats saved in {filename}")
-
-    # return y_pred
+    return results
 
 
-def results(dataset: DeepDataset, y_true: List[int], y_pred: List[int]) -> None:
+def report(dataset: DeepDataset, results: pd.DataFrame) -> None:
+    def stats_report(scores):
+        mean = scores.mean()
+        std = scores.std()
+        inf, sup = stats.norm.interval(0.95, loc=mean, scale=std / np.sqrt(len(scores)))
+        return (mean, std, inf, sup)
+
     labels = dataset.get_labels_name()
     labels = [label if label is not np.nan else "NaN" for label in labels]
 
-    print(f"{classification_report(y_true, y_pred, target_names=labels)}")
-    print(f"Balanced accuracy: {balanced_accuracy_score(y_true, y_pred):.2f}")
+    metrics = ["balanced_accuracy", "f1_macro"]
+    scores = {}
+    scores["balanced_accuracy"] = np.array(
+        [balanced_accuracy_score(group["y_true"], group["y_pred"]) for _, group in results.groupby("round")]
+    )
+
+    scores["f1_macro"] = np.array(
+        [f1_score(group["y_true"], group["y_pred"], average="macro") for _, group in results.groupby("round")]
+    )
+
+    if results["round"].nunique() == 1:
+        print(f"{classification_report(results['y_true'], results['y_pred'], target_names=labels)}")
+
+    for metric in metrics:
+        if len(scores[metric]) == 1:
+            print(f"{metric.capitalize()}: {scores[metric][0]:.2f}")
+        else:
+            mean, std, inf, sup = stats_report(scores[metric])
+            print(f"{metric.capitalize()}: {mean:.2f} ± {std:.2f} [{inf:.2f}, {sup:.2f}]")
 
 
 def configure_wandb(run_name: str, cfg: ConfigSklearn, cfg_path: str, groups: List[int], split: Split) -> None:
@@ -120,52 +134,35 @@ def configure_wandb(run_name: str, cfg: ConfigSklearn, cfg_path: str, groups: Li
 
 def main(cfg: Path, split: Split):
     load_dotenv()
+    actual_datetime = datetime.now()
     config = ConfigSklearn(cfg)
     # config.clear_cache()
 
     dataset_name = config["dataset"]["name"]
     dataset = config._get_dataset_deep()
 
-    # group_obj = getattr(groups_module, "Group" + dataset_name)(dataset=dataset, config=config)
-    # groups = group_obj.groups()
-    from vibnet.data.round_cv import GroupRepeatedCWRU48k
-    import pandas as pd
-    group_obj = GroupRepeatedCWRU48k(dataset=dataset, config=config, custom_name=config["run_name"])
-    groups = group_obj.groups()
-    groups_str = groups.copy()  # TODO: remove
+    groups = group_class(dataset_name, split)(dataset=dataset, config=config, custom_name=config["run_name"]).groups()
     groups = pd.Categorical(groups).codes
 
-    # if split is Split.biased_mirrored:
-    #     groups = GroupMirrorBiased(dataset=dataset, config=config, custom_name=config["run_name"]).groups(groups)
+    if split is Split.biased_mirrored:
+        groups = GroupMirrorBiased(dataset=dataset, config=config, custom_name=config["run_name"]).groups(groups)
 
-    # configure_wandb(config["run_name"], config, cfg, groups, split)
+    configure_wandb(config["run_name"], config, cfg, groups, split)
 
     X, y = config.get_dataset()
-    # from vibnet.data.round_cv import _compute_combinations
-    # CLASS_DEF = [-1, "I", "R", "O"]
-    # combs = [c for c in _compute_combinations(y, groups)]
-    # print("Total combs: ", len(combs))
-    # for i in range(4):
-    #     print("round: ", i)
-    #     c = combs[i]
-    #     for i in range(4):
-    #         print("fold: ", i, end="-> ")
-    #         for key, item in c.items():
-    #             gp = item[i]
-    #             gp = CLASS_DEF[int(gp.split(" ")[0])] + " " + gp.split(" ")[1]
-    #             print(f"{gp}", end=", ")
-    #         print()
-    #     print()
-    round_cv(config, X, y, groups, metainfo=dataset.get_metainfo())
 
+    if split is Split.biased_usual:
+        results = classifier_biased(config, X, y, groups)
+    elif split is Split.multi_round:
+        results = classifier_multi_round(config, X, y, groups)
+    else:
+        results = classifier_predefined(config, X, y, groups)
 
+    filename = f"results-baselines-{config.config.get('run_name', None)}-{actual_datetime.isoformat()}.csv"
+    results.to_csv(filename, index=False)
+    if is_logged():
+        table = wandb.Table(data=results)
+        wandb.log({"Results": table})
+        wandb.save(str(cfg))
 
-    # data = {"y_pred":y_pred, "y_true":np.concatenate([y,] * num_repeats), "groups":np.concatenate([groups,] * num_repeats)}
-    # data["round"] = np.array([i for i in range(num_repeats) for _ in range(len(y))])
-    # results = pd.DataFrame(data).to_csv("results.csv", index=False)
-    # if split is Split.biased_usual:
-    #     y_pred = classifier_biased(config, X, y, groups)
-    # else:
-    #     y_pred = classifier_predefined(config, X, y, groups)
-    
-    # results(dataset, y, y_pred)
+    report(dataset, results)
