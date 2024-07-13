@@ -1,7 +1,7 @@
 seed: 42
+run_name: knn-exp
 model:
   name: knn
-  output_param: out_channel
   parameters:
     n_jobs: 10
 dataset:

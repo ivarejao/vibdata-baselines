@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 from vibdata.deep.DeepDataset import DeepDataset
 
 
-class MemeDataset(Dataset):
+class SklearnDataset(Dataset):
     def __init__(self, src_dataset: DeepDataset, standardize=False):
         self.dataset = src_dataset
         self.standardize = standardize

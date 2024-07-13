@@ -4,6 +4,7 @@
   "type": "object",
   "required": [
     "seed",
+    "run_name",
     "model",
     "dataset"
   ],
@@ -11,6 +12,9 @@
   "properties": {
     "seed": {
       "type": "integer"
+    },
+    "run_name": {
+      "type": "string"
     },
     "model": {
       "type": "object",
