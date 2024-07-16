@@ -15,7 +15,7 @@ __all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged", "Grou
 
 _is_logged = False
 
-TOTAL_SPLITS = 10
+TOTAL_SPLITS = 30
 
 
 class Split(str, Enum):
@@ -56,7 +56,6 @@ def wandb_login():
 
 def group_class(dataset_name: str, split: Split) -> Type[group_dataset.GroupDataset]:
     group_obj_name = "Group{0}{1}".format("MultiRound" if split is Split.multi_round else "", dataset_name)
-    print(group_obj_name)
     class_ = getattr(group_dataset, group_obj_name)
     return class_
 
