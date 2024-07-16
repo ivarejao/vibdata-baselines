@@ -235,7 +235,6 @@ class ConfigSklearn:
                 scoring="balanced_accuracy",
                 cv=gs_cv,
                 n_jobs=-1,
-                verbose=1,  # TODO: remove for debugging
             )
 
         return estimator

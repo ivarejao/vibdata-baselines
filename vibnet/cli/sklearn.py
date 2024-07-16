@@ -90,7 +90,6 @@ def main(cfg: Path, split: Split, clear_cache: bool):
             np.unique(cross_validate_args["groups"]).shape[0] / np.unique(cross_validate_args["y"]).shape[0]
         )  # folds_per_round = total_groups / total_labels = num_conditions
         num_repeats = np.ceil(TOTAL_SPLITS / n_splits).astype(int)
-
         results = []
         combinations = compute_combinations(cross_validate_args["y"], cross_validate_args["groups"])
         for i in range(num_repeats):
@@ -107,7 +106,7 @@ def main(cfg: Path, split: Split, clear_cache: bool):
             cross_validate_args["fit_params"] = {"classifier__groups": cross_validate_args["groups"]}
 
             # Run round
-            round_results = cross_validate(return_indices=True, **cross_validate_args)
+            round_results = cross_validate(**cross_validate_args)
             round_results["round"] = [
                 i,
             ] * n_splits
