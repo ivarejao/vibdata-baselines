@@ -37,7 +37,7 @@ def report(results: pd.DataFrame) -> None:
             print(f"{metric_name.capitalize()}: {mean:.2f} ± {std:.2f} [{inf:.2f}, {sup:.2f}]")
 
 
-def main(cfg: Path, split: Split):
+def main(cfg: Path, split: Split, clear_cache: bool):
     actual_datetime = datetime.now()
 
     try:
@@ -47,7 +47,8 @@ def main(cfg: Path, split: Split):
 
     config = ConfigSklearn(cfg)
     seed = config.get_yaml().get("seed", None)
-    config.clear_cache()
+    if clear_cache:
+        config.clear_cache()
     if seed is not None:
         set_deterministic(seed)
     else:

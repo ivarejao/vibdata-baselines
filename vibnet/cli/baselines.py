@@ -132,11 +132,12 @@ def configure_wandb(run_name: str, cfg: ConfigSklearn, cfg_path: str, groups: Li
     wandb.save(cfg_path, policy="now")
 
 
-def main(cfg: Path, split: Split):
+def main(cfg: Path, split: Split, clear_cache: bool):
     load_dotenv()
     actual_datetime = datetime.now()
     config = ConfigSklearn(cfg)
-    # config.clear_cache()
+    if clear_cache:
+        config.clear_cache()
 
     dataset_name = config["dataset"]["name"]
     dataset = config._get_dataset_deep()
