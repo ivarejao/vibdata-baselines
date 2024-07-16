@@ -13,18 +13,18 @@ _app = typer.Typer(pretty_exceptions_show_locals=False)
 def _main_baselines_wrapper(
     cfg: Path = typer.Option(help="Config file"),
     split: Split = typer.Option(default=Split.unbiased, help="Type of division"),
-    clear_cache: bool = typer.Option(help="Clear the cache data before running"),
+    clear_cache: bool = typer.Option(default=False, is_flag=True, help="Clear the cache data before running"),
 ):
-    _main_baselines(cfg, split)
+    _main_baselines(cfg, split, clear_cache)
 
 
 @_app.command(name="experiment")
 def _main_sklearn_wrapper(
     cfg: Path = typer.Option(help="Config file"),
     split: Split = typer.Option(default=Split.unbiased, help="Type of division"),
-    clear_cache: bool = typer.Option(help="Clear the cache data before running"),
+    clear_cache: bool = typer.Option(default=False, is_flag=True, help="Clear the cache data before running"),
 ):
-    _main_sklearn(cfg, split)
+    _main_sklearn(cfg, split, clear_cache)
 
 
 def run_baselines():
