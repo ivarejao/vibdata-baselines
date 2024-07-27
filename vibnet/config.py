@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import vibdata.raw as datasets
 import vibdata.deep.signal.transforms as deep_transforms
+from rich import print
 from sklearn import model_selection as cross_validators
 from sklearn.base import BaseEstimator
 from sklearn.ensemble import RandomForestClassifier
@@ -83,11 +84,11 @@ class ConfigSklearn:
             self.config["dataset"]["deep"]["root"], self.config.get("run_name", self.config["dataset"]["name"])
         )
         if os.path.exists(deep_root_dir):
-            print("!! Removing cache deep", deep_root_dir)
+            print("[bold red]Removing cache deep [/bold red]", deep_root_dir)
             shutil.rmtree(deep_root_dir)
         group_path = os.path.join(self.config["dataset"]["groups_dir"], "groups_" + self.config["run_name"] + ".npy")
         if os.path.exists(group_path):
-            print("!! Removing cache groups", group_path)
+            print("[bold red]Removing cache groups [/bold red]", group_path)
             os.remove(group_path)
 
     @property
