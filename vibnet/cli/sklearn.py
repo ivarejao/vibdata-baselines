@@ -10,10 +10,10 @@ from scipy import stats
 from sklearn.model_selection import StratifiedKFold, LeaveOneGroupOut, cross_validate
 
 from vibnet.config import ConfigSklearn
+from vibnet.data.rounds import load_combinations
 from vibnet.utils.sklearn import TrainDataset
-from vibnet.data.group_dataset import compute_combinations
 
-from .common import TOTAL_SPLITS, Split, GroupMirrorBiased, is_logged, group_class, wandb_login, set_deterministic
+from .common import Split, GroupMirrorBiased, is_logged, group_class, wandb_login, set_deterministic
 
 
 def report(results: pd.DataFrame) -> None:
@@ -24,7 +24,7 @@ def report(results: pd.DataFrame) -> None:
         return (mean, std, inf, sup)
 
     agg_results = results.groupby("round", as_index=True).agg("mean")
-    print(agg_results)
+    print(agg_results) if agg_results.shape[0] > 1 else print(results)
 
     for test_metric in [c for c in agg_results.columns if "test_" in c]:
         metric_name = test_metric.replace("test_", "")
@@ -64,8 +64,10 @@ def main(cfg: Path, split: Split, clear_cache: bool):
         "scoring": ["accuracy", "f1_macro", "balanced_accuracy"],
         "verbose": 4,
     }
-    groups = group_class(dataset_name, split)(dataset=dataset, config=config, custom_name=config["run_name"]).groups()
-    unbiased_groups = pd.Categorical(groups).codes.reshape(-1).astype(int)
+    unbiased_groups = group_class(dataset_name, split)(
+        dataset=dataset, config=config, custom_name=config["run_name"]
+    ).groups()
+    unbiased_groups = pd.Categorical(unbiased_groups).codes
 
     # Define specific params based on the type of split
     if split is Split.biased_usual:
@@ -86,19 +88,14 @@ def main(cfg: Path, split: Split, clear_cache: bool):
     cross_validate_args.update({"X": train_dataset, "y": train_dataset.targets})
 
     if split is Split.multi_round:
-        n_splits = int(
-            np.unique(cross_validate_args["groups"]).shape[0] / np.unique(cross_validate_args["y"]).shape[0]
-        )  # folds_per_round = total_groups / total_labels = num_conditions
-        num_repeats = np.ceil(TOTAL_SPLITS / n_splits).astype(int)
         results = []
-        combinations = compute_combinations(cross_validate_args["y"], cross_validate_args["groups"])
-        for i in range(num_repeats):
-            print("Round: ", i)
-            round_groups = next(combinations)
-            groups_per_fold = [tuple(fold) for fold in zip(*round_groups.values())]
+        combinations = load_combinations(config["dataset"])
+        for r, round_groups in enumerate(combinations):
+            print("Round: ", r)
             current_group = np.sum(
-                [np.isin(unbiased_groups, fold_groups) * i for i, fold_groups in enumerate(groups_per_fold)], axis=0
+                [np.isin(unbiased_groups, fold_groups) * i for i, fold_groups in enumerate(round_groups)], axis=0
             )
+            n_splits = np.unique(current_group).size
             # Update args for this round
             cross_validate_args["groups"] = current_group
             # This will be only used if the config["train_split"] are
@@ -108,7 +105,7 @@ def main(cfg: Path, split: Split, clear_cache: bool):
             # Run round
             round_results = cross_validate(**cross_validate_args)
             round_results["round"] = [
-                i,
+                r,
             ] * n_splits
             round_results["fold"] = list(range(n_splits))
             results.append(round_results)
@@ -123,10 +120,10 @@ def main(cfg: Path, split: Split, clear_cache: bool):
 
     df = pd.DataFrame(results) if isinstance(results, dict) else pd.concat([pd.DataFrame(d) for d in results])
     df = df.set_index(["round", "fold"])
-    report(df)
     filename = f"results-{config.config.get('run_name', None)}-{actual_datetime.isoformat()}.csv"
     print(f"Saving csv at [bold green]{filename}[/bold green]")
     df.to_csv(filename)
+    report(df)
 
     if is_logged():
         project_name = os.environ["WANDB_PROJECT"]
