@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import wandb
 from dotenv import load_dotenv
-from vibdata.deep.DeepDataset import DeepDataset
 
 from vibnet.data import group_dataset
 from vibnet.data.group_dataset import GroupMirrorBiased
@@ -21,6 +20,7 @@ class Split(str, Enum):
     biased_usual = ("biased_usual",)
     biased_mirrored = ("biased_mirrored",)
     unbiased = "unbiased"
+    multi_round = "multi_round"
 
 
 def set_deterministic(seed: int):
@@ -52,8 +52,9 @@ def wandb_login():
     _is_logged = True
 
 
-def group_class(dataset_name: str) -> Type[group_dataset.GroupDataset]:
-    class_ = getattr(group_dataset, "Group" + dataset_name)
+def group_class(dataset_name: str, split: Split) -> Type[group_dataset.GroupDataset]:
+    group_obj_name = "Group{0}{1}".format("MultiRound" if split is Split.multi_round else "", dataset_name)
+    class_ = getattr(group_dataset, group_obj_name)
     return class_
 
 

@@ -39,11 +39,12 @@ dataset:
           on_field: signal
       # In case theres a need to filter by sample rate,
       # the filter should be inserted at this point
-      # - name: FilterSampleRate
+      # - name: FilterByValue
       #   parameters:
-      #     sample_rate: X
+      #     on_field: "field_name"
+      #     values: X
       # If the experiment needs to normalize the sample rate,
       # the following transform should be used
       # - name: NormalizeSampleRate
       #  parameters:
-      #    sample_rate: 97656
+      #    sample_rate: X

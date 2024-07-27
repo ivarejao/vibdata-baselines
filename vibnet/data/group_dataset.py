@@ -1,10 +1,8 @@
 import os
 
 import numpy as np
-import pandas as pd
 import numpy.typing as npt
 from tqdm import tqdm
-from numpy._typing import NDArray
 from imblearn.under_sampling import RandomUnderSampler
 from vibdata.deep.DeepDataset import DeepDataset
 from vibdata.deep.signal.core import SignalSample
@@ -33,6 +31,7 @@ class GroupDataset:
             npt.NDArray[np.int_]: groups of all dataset
         """
         if os.path.exists(self.groups_file):
+            print(f"Loading group dataset from: {self.groups_file}")
             return np.load(self.groups_file)
         else:
             groups = self._random_grouping() if self.shuffle_before_iter else self._sequential_grouping()
@@ -412,3 +411,26 @@ class GroupMirrorBiased(GroupDataset):
             new_biased_groups[samples_selected] = fold
 
         return new_biased_groups
+
+
+class GroupMultiRoundCWRU(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        sample_metainfo = sample["metainfo"]
+        return sample_metainfo["label"].astype(str) + " " + sample_metainfo["load"].astype(int).astype(str)
+
+
+class GroupMultiRoundMFPT(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        sample_metainfo = sample["metainfo"]
+        return sample_metainfo["label"].astype(str) + " " + sample_metainfo["load"].astype(int).astype(str)
+
+
+class GroupMultiRoundPU(GroupDataset):
+    @staticmethod
+    def _assigne_group(sample: SignalSample) -> int:
+        sample_metainfo = sample["metainfo"]
+        condition_fields = ["radial_force_n", "rotation_hz", "load_nm"]
+        condition_str = "_".join([sample_metainfo[field].astype(str) for field in condition_fields])
+        return sample_metainfo["label"].astype(str) + " " + condition_str
