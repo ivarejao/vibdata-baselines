@@ -15,8 +15,6 @@ __all__ = ["set_deterministic", "wandb_login", "group_class", "is_logged", "Grou
 
 _is_logged = False
 
-TOTAL_SPLITS = 30
-
 
 class Split(str, Enum):
     biased_usual = ("biased_usual",)
