@@ -2,6 +2,8 @@ from pathlib import Path
 
 import typer
 
+from vibnet.data.rounds.create import main as _main_mr_data_division
+
 from .common import Split
 from .sklearn import main as _main_sklearn
 from .baselines import main as _main_baselines
@@ -25,6 +27,14 @@ def _main_sklearn_wrapper(
     clear_cache: bool = typer.Option(default=False, is_flag=True, help="Clear the cache data before running"),
 ):
     _main_sklearn(cfg, split, clear_cache)
+
+
+@_app.command(name="mr_data_division")
+def _main_mr_data_division_wrapper(
+    cfg: Path = typer.Option(help="Config file"),
+    clear_cache: bool = typer.Option(default=False, is_flag=True, help="Clear the cache data before running"),
+):
+    _main_mr_data_division(cfg, clear_cache)
 
 
 def run_baselines():
