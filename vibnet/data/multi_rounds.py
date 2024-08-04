@@ -9,19 +9,14 @@ import pandas as pd
 from rich import print
 from tqdm import tqdm
 
-import vibnet.data.rounds as round_pkg
+import vibnet.data.rounds_repo as round_pkg
 from vibnet.config import ConfigSklearn
-from vibnet.cli.common import Split, group_class, set_deterministic
+from vibnet.cli.common import group_class, set_deterministic
 from vibnet.utils.sklearn import TrainDataset
 
+__all__ = ["compute_combinations"]
+
 TOTAL_SPLITS = 30
-
-
-def englobe_all_data(round_comb):
-    matrix = np.array(round_comb)
-    n_groups = matrix.shape[0]
-    n_labels = matrix.shape[1]
-    return all([np.unique(matrix[:, col]).size == n_groups for col in range(n_labels)])
 
 
 def picker(combs, n, seed):
@@ -90,6 +85,12 @@ def compute_combinations(y, groups, n_splits, n_repeats, seed):
         )
         return returned
 
+    def englobe_all_data(round_comb):
+        matrix = np.array(round_comb)
+        n_groups = matrix.shape[0]
+        n_labels = matrix.shape[1]
+        return all([np.unique(matrix[:, col]).size == n_groups for col in range(n_labels)])
+
     initial_states = {label: sorted(groups, key=custom_sort_key) for label, groups in initial_states.items()}
     folds = list(product(*initial_states.values()))
     print("Total combinations of folds:", len(folds))
@@ -114,7 +115,6 @@ def is_filter_transform(transf):
 
 
 def main(cfg: Path, clear_cache: bool):
-    split: Split = Split("multi_round")
     data_divisions_repo = os.path.dirname(round_pkg.__file__)
     print(data_divisions_repo)
 
@@ -124,7 +124,9 @@ def main(cfg: Path, clear_cache: bool):
         config.clear_cache()
     set_deterministic(seed)
 
+    dataset_config = config["dataset"]
     dataset_name = config["dataset"]["name"]
+
     dataset = config.get_deepdataset()
     # TODO: improve this form
     filter_transform = [
@@ -134,7 +136,7 @@ def main(cfg: Path, clear_cache: bool):
     ]
     suffix = "_" + "_".join(filter_transform) if len(filter_transform) > 0 else ""
 
-    groups = group_class(dataset_name, split)(dataset=dataset, config=config, custom_name=config["run_name"]).groups()
+    groups = group_class(dataset_config)(dataset=dataset, config=config, custom_name=config["run_name"]).groups()
     categorical_groups = pd.Categorical(groups).codes  # noqa F841
 
     train_dataset = TrainDataset(dataset)
