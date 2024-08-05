@@ -21,7 +21,6 @@ class Split(str, Enum):
     biased_usual = ("biased_usual",)
     biased_mirrored = ("biased_mirrored",)
     unbiased = "unbiased"
-    multi_round = "multi_round"
 
 
 def set_deterministic(seed: int):
