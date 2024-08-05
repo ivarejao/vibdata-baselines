@@ -1,19 +1,24 @@
 import os
+from typing import Any, Dict, List
 from pathlib import Path
 from datetime import datetime
 
 import numpy as np
 import wandb
 import pandas as pd
+import numpy.typing as npt
 from rich import print
 from scipy import stats
+from sklearn.dummy import check_random_state
 from sklearn.model_selection import StratifiedKFold, LeaveOneGroupOut, cross_validate
+from vibdata.deep.DeepDataset import DeepDataset
 
 from vibnet.config import ConfigSklearn
-from vibnet.data.rounds import load_combinations
 from vibnet.utils.sklearn import TrainDataset
+from vibnet.data.rounds_repo import load_combinations, is_multi_round_dataset
+from vibnet.data.group_dataset import GroupMirrorBiased
 
-from .common import Split, GroupMirrorBiased, is_logged, group_class, wandb_login, set_deterministic
+from .common import Split, is_logged, group_class, wandb_login, set_deterministic
 
 
 def report(results: pd.DataFrame) -> None:
@@ -37,6 +42,49 @@ def report(results: pd.DataFrame) -> None:
             print(f"{metric_name.capitalize()}: {mean:.2f} ± {std:.2f} [{inf:.2f}, {sup:.2f}]")
 
 
+def classifier_multi_rounds(
+    dataset: DeepDataset,
+    cfg: ConfigSklearn,
+    split: Split,
+    cross_validate_args: Dict[str, Any],
+    base_groups: npt.ArrayLike,
+) -> List[Dict]:
+    results = []
+    combinations = load_combinations(cfg["dataset"])
+    rng = check_random_state(cfg["seed"])  # Only used for biased_usual split
+
+    for r, round_groups in enumerate(combinations):
+        print("Round: ", r)
+        current_group = np.sum(
+            [np.isin(base_groups, fold_groups) * i for i, fold_groups in enumerate(round_groups)], axis=0
+        )
+        n_splits = np.unique(current_group).size
+
+        if split == Split.biased_usual:
+            cross_validate_args["cv"] = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=rng)
+        else:
+            if split == Split.biased_mirrored:
+                cross_validate_args["groups"] = GroupMirrorBiased(
+                    dataset=dataset, config=cfg, custom_name=cfg["run_name"]
+                ).groups(current_group)
+            elif split == Split.unbiased:
+                cross_validate_args["groups"] = current_group
+            cross_validate_args["cv"] = LeaveOneGroupOut()
+            # This will be only used if the config["train_split"] are set
+            # to a GroupCrossValidator, e.g. LeaveOneGroupOut
+            cross_validate_args["fit_params"] = {"classifier__groups": cross_validate_args["groups"]}
+
+        # Run round
+        round_results = cross_validate(**cross_validate_args)
+        round_results["round"] = [
+            r,
+        ] * n_splits
+        round_results["fold"] = list(range(n_splits))
+        results.append(round_results)
+
+    return results
+
+
 def main(cfg: Path, split: Split, clear_cache: bool):
     actual_datetime = datetime.now()
 
@@ -54,7 +102,6 @@ def main(cfg: Path, split: Split, clear_cache: bool):
     else:
         print("[bold red]Alert![/bold red] Seed was not set!")
 
-    dataset_name = config["dataset"]["name"]
     dataset = config.get_deepdataset()
 
     # Create common args for cross validation
@@ -64,53 +111,34 @@ def main(cfg: Path, split: Split, clear_cache: bool):
         "scoring": ["accuracy", "f1_macro", "balanced_accuracy"],
         "verbose": 4,
     }
-    unbiased_groups = group_class(dataset_name, split)(
+    unbiased_groups = group_class(config["dataset"])(
         dataset=dataset, config=config, custom_name=config["run_name"]
     ).groups()
     unbiased_groups = pd.Categorical(unbiased_groups).codes
 
-    # Define specific params based on the type of split
-    if split is Split.biased_usual:
-        num_folds = len(set(unbiased_groups))
-        cross_validate_args["cv"] = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)
-    else:
-        if split is Split.biased_mirrored:
-            cross_validate_args["groups"] = GroupMirrorBiased(
-                dataset=dataset, config=config, custom_name=config["run_name"]
-            ).groups(unbiased_groups)
-        else:
-            cross_validate_args["groups"] = unbiased_groups
-        cross_validate_args["cv"] = LeaveOneGroupOut()
-        # This will be only used if the config["train_split"] are set to a GroupCrossValidator, e.g. LeaveOneGroupOut
-        cross_validate_args["fit_params"] = {"classifier__groups": cross_validate_args["groups"]}
-
     train_dataset = TrainDataset(dataset)
     cross_validate_args.update({"X": train_dataset, "y": train_dataset.targets})
 
-    if split is Split.multi_round:
-        results = []
-        combinations = load_combinations(config["dataset"])
-        for r, round_groups in enumerate(combinations):
-            print("Round: ", r)
-            current_group = np.sum(
-                [np.isin(unbiased_groups, fold_groups) * i for i, fold_groups in enumerate(round_groups)], axis=0
-            )
-            n_splits = np.unique(current_group).size
-            # Update args for this round
-            cross_validate_args["groups"] = current_group
-            # This will be only used if the config["train_split"] are
-            # set to a GroupCrossValidator, e.g. LeaveOneGroupOut
+    # Define specific params based on the type of split
+    if is_multi_round_dataset(config["dataset"]):
+        results = classifier_multi_rounds(dataset, config, split, cross_validate_args, unbiased_groups)
+    else:
+        if split is Split.biased_usual:
+            num_folds = len(set(unbiased_groups))
+            cross_validate_args["cv"] = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=seed)
+        else:
+            if split is Split.biased_mirrored:
+                cross_validate_args["groups"] = GroupMirrorBiased(
+                    dataset=dataset, config=config, custom_name=config["run_name"]
+                ).groups(unbiased_groups)
+            else:
+                cross_validate_args["groups"] = unbiased_groups
+            cross_validate_args["cv"] = LeaveOneGroupOut()
+            # This will be only used if the config["train_split"] are set
+            # to a GroupCrossValidator, e.g. LeaveOneGroupOut
             cross_validate_args["fit_params"] = {"classifier__groups": cross_validate_args["groups"]}
 
-            # Run round
-            round_results = cross_validate(**cross_validate_args)
-            round_results["round"] = [
-                r,
-            ] * n_splits
-            round_results["fold"] = list(range(n_splits))
-            results.append(round_results)
-
-    else:
+        # Run cross validation
         num_folds = len(set(unbiased_groups))
         results = cross_validate(**cross_validate_args)
         results["round"] = [

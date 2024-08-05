@@ -2,7 +2,7 @@ from pathlib import Path
 
 import typer
 
-from vibnet.data.rounds.create import main as _main_mr_data_division
+from vibnet.data.multi_rounds import main as _main_mr_data_division
 
 from .common import Split
 from .sklearn import main as _main_sklearn
