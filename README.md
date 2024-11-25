@@ -1,28 +1,53 @@
-# Vibnet
-## Training
-In the training there are two types of models saved:
-- `model_train_fold_{fold_id}.pt` : Its the best model evaluated by the validation set
-- `best_model_fold_{fold_id}_epochs_{max_epochs}.pt` : Its the model trained with the optimal number of epochs and using the validation and training set together to train the model.
+# Similarity Bias in Fault Diagnosis Benchmarks
 
-## Wandb config
-In order to use the wandb plataform you must define two enviorement variables, `WANDB_KEY` and `WANDB_PROJECT`. These variables can be define in a `.env` file inside the same directory where the `main.py` will be executed. The `.env` template can be seen as follow.
-```bash
-WANDB_KEY="{user_wandb_key}"
-WANDB_PROJECT="{wandb_project_name}"
-```
+This repository contains the benchmarks and implementations for the study **"The similarity bias problem: what it is and how it impacts vibration-based intelligent fault diagnosis"**. It provides code, methods, and results for evaluating the impact of similarity bias in machine learning models applied to vibration data for intelligent fault diagnosis.
 
+## Abstract (Paper Overview)
 
+The study investigates the **similarity bias** problem in vibration-based machine learning research. It evaluates performance differences between conventional and deep learning models under different cross-validation strategies to address the bias issue. Key contributions include:
 
-## Testing a Model
+- Raising awareness about similarity bias.
+- Designing experiments on public datasets to mitigate its effects.
+- Providing benchmark methods and results for future research.
+- Recommending best practices for vibration-based datasets in machine learning.
 
-To test a model without training it, follow these steps:
+## Benchmarks and Methods
 
-1. Pass the `--test` flag to set the **testing mode**.
-2. Use the `--model-dir` argument to specify the path where the models files are stored.
-3. Note that you must include all other arguments used during model training, such as `batch-size`, `epochs` (if different from the config file), and other required arguments. These include the config file and the name of that run.
+This repository contains the implementation and evaluation of three classification methods:
 
-**Example Usage:**
+- **Nearest Neighbor**
+- **Random Forest**
+- **XResNet18-1D (Deep Convolutional Neural Network)**
 
-```bash
-python3 main.py --test --model-dir {path_to_model_dir} --dataset {dataset} --batch-size {bs_size} --cfg {config_path} --run evaluating/dataset
-```
+### Datasets
+The classifiers were trained and tested on the following datasets:
+- **CWRU** (12 kHz sample rate)
+- **CWRU** (48 kHz sample rate)
+- **MFPT** (97.656 kHz sample rate)
+- **PU**
+- **IMS**
+- **UOC**
+
+### Cross-Validation Strategies
+Each experiment employed three cross-validation strategies to address similarity bias:
+
+1. **`bias_usual`**: Random split, the default approach dividing the dataset randomly into folds.
+2. **`unbiased`**: Predefined folds based on dataset characteristics (e.g., grouping by operational conditions like load levels).
+3. **`bias_mirrored`**: Random split while replicating the class distribution of the `unbiased` division.
+
+### Multi-Round Cross-Validation
+For datasets supporting multiple rounds of cross-validation, approximately 30 observations were generated for robust statistical hypothesis testing. Documentation for these divisions is available in `docs/multi_rounds/`.
+
+## Repository Structure
+- `vibnet/`: Code for training and testing models across datasets and cross-validation strategies.
+- `docs/`: Documentation on data splits, methodology, and multi-round cross-validation.
+- `cfgs/`: Configuration files for experiments.
+- `tests/`: Tests used to validate modifications at the benchmark
+
+## Experiment Designs
+
+More details about the experimental designs and methodologies can be found in the original paper:
+"The similarity bias problem: what it is and how it impacts vibration-based intelligent fault diagnosis."
+
+## Authors
+This repository is maintained by the authors of the paper. For inquiries or collaboration, please contact the primary author(s) listed in the paper.
