@@ -1,5 +1,3 @@
-### `docs/multi_round/PU.md`
-
 # Multi-Round Cross-Validation: PU Dataset
 
 This document describes the multi-round cross-validation strategy for the PU dataset. The dataset includes fault categories recorded under **four different working conditions** to simulate a variety of real-world scenarios.
