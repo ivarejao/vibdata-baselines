@@ -21,7 +21,7 @@ typer = {version = ">=0.9.0", extras = ["all"]}
 lightning = "^2.1.0"
 torchmetrics = "^1.2.0"
 essentia = "2.1b6.dev1110"
-vibdata = {git = "git@gitlab.com/ninfa-ufes/deep-rpdbcs/signal-datasets.git", rev = "ac9b5f6957722209ec00b7fae45256d3f6f9509d"}
+vibdata = {git = "https://github.com/ivarejao/vibdata.git", rev = "eed9d47b18fff8078a4ff4f4431ebc7aa5306331"}
 jsonschema = "^4.21.0"
 
 [tool.poetry.dev-dependencies]
